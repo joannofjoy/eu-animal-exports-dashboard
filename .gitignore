@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Power BI
+*.pbix.autosave
+
+# VS Code
+.vscode/
+
+# Raw data
+data/raw/
+
+# OS
+.DS_Store
+Thumbs.db
