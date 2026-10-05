@@ -1,0 +1,67 @@
+# Refreshes every reporter's data from the live Eurostat API and
+# redeploys the site, on a schedule -- this is the "always fetch new
+# data" piece of the project, running unattended once this repo is on
+# GitHub (see docs/llm_agent_handoff.md for the local-only alternative
+# this replaces, and for why a plain Windows Task Scheduler entry on one
+# person's PC isn't enough for a *hosted* site).
+#
+# Nothing here commits the refreshed data back into git history -- every
+# run re-fetches everything from scratch (cheap enough: a few hundred
+# small API calls, a couple of minutes) and publishes straight to GitHub
+# Pages via the official deploy action, so the repo stays source code
+# only, not a growing pile of regenerated CSVs.
+name: Refresh data and deploy
+
+on:
+  schedule:
+    # 03:11 UTC every day -- an off-the-hour minute, not :00, so this
+    # doesn't line up with the exact moment thousands of other repos'
+    # cron jobs also fire (a real GitHub Actions recommendation, not
+    # superstition: jobs scheduled for :00 queue up behind each other and
+    # can run late). "Every couple of days" was the ask; daily is simpler
+    # to reason about than an every-other-day cron expression and GitHub
+    # Actions' free tier has no problem absorbing a two-minute job once a
+    # day, so there's no real cost to running it more often than strictly
+    # asked for.
+    - cron: '11 3 * * *'
+  # Lets you (or a future agent) trigger a refresh on demand from the
+  # GitHub UI/API, e.g. right after fixing a bug, instead of waiting for
+  # the next scheduled run.
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  refresh-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - run: pip install -r requirements.txt
+
+      - name: Refresh data and rebuild every page
+        run: python scripts/refresh_all.py
+        working-directory: .
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

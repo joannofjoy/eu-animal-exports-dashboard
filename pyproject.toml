@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]  # pycodestyle, pyflakes, isort
+
+[tool.pytest.ini_options]
+# Adds scripts/ to Python's import search path for the test session, so
+# tests can do `from fetch_at_history import aggregate` directly, the same
+# way build_dashboard.py imports countries.py -- without this, pytest
+# (running from the project root) wouldn't know where to find those
+# modules.
+pythonpath = ["scripts"]

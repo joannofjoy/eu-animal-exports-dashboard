@@ -1,0 +1,1086 @@
+<!--
+  Template, not the live page -- see scripts/build_monthly.py, which reads
+  this file, replaces the __ALL_CAPS__ tokens below with real data, and
+  writes the result out as monthly.html. Re-run that script after the data
+  changes; editing monthly.html by hand would just get overwritten next
+  time it runs.
+
+  This adds the one view none of the other pages have: a within-year,
+  month-by-month time series, alongside the same per-partner list and map
+  the other pages already show for a selected year. Still Austria-only,
+  still just live cattle -- inspired by an external reference tool that
+  also lets you switch reporter country and topic (meat, antibiotics,
+  economy...), which this project deliberately does not attempt to
+  replicate; see fetch_at_history.py's aggregate_monthly() docstring.
+
+  Layout note: the per-partner bar list sits in its own column to the
+  left of the map, not overlaid on top of it -- overlapping a busy list
+  of numbers on a busy map hurt readability in the reference tool this
+  page is modelled on.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+   <meta charset="utf-8" />
+   <meta name="viewport" content="width=device-width,initial-scale=1" />
+   <title>The Marker – Austrian Cattle Exports by Month</title>
+   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+   <style>
+     :root{
+       --pink:#E64980;
+       --turq:#6FB2A5;
+       --blue:#31688F;
+       --purple:#6D3D83;
+       --black:#010200;
+       --offwhite:#F0EEEF;
+
+       --panel: rgba(255,255,255,.04);
+       --border: rgba(240,238,239,.16);
+       --text: rgba(240,238,239,.92);
+       --muted: rgba(240,238,239,.68);
+       --grid: rgba(240,238,239,.12);
+     }
+     *{ box-sizing:border-box; }
+     body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--black); color:var(--text); }
+     .wrap{ max-width:1320px; margin:0 auto; padding:22px 18px 28px; }
+     /* Site-wide tab bar -- navigates between the six standalone pages
+        (a normal full-page link per tab, not a JS view-switcher). Sits
+        above the title; its own bottom border is the horizontal rule
+        that used to belong to .header. Not to be confused with
+        .yearTabs/.yearTabBtn further down, which pick the year *within*
+        this page. */
+     .siteTabs{ display:flex; gap:4px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+     .siteTabBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       text-decoration:none; display:inline-block;
+       background:transparent; border:none; border-bottom:2px solid transparent;
+       padding:9px 14px; cursor:pointer; margin-bottom:-1px;
+     }
+     .siteTabBtn:hover{ color:var(--text); }
+     .siteTabBtn.active{ color:var(--turq); border-bottom-color:var(--turq); cursor:default; }
+     /* Mirror Statistics is an internal/dev view, not a finished dashboard --
+        muted + italic by default, purple (not the usual turquoise) when
+        active or hovered, so it visually reads as "different" from the
+        other five tabs. */
+     .siteTabBtnDev{ color:rgba(240,238,239,.42); font-style:italic; }
+     .siteTabBtnDev:hover{ color:var(--purple); }
+     .siteTabBtnDev.active{ color:var(--purple); border-bottom-color:var(--purple); }
+
+     .header{ padding-top:12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+     h1{ margin:0; font-size:30px; line-height:1.1; letter-spacing:-0.02em; }
+
+     /* Reporter picker -- which country's own declarations this whole
+        page shows. See index.template.html for the identical pattern. */
+     .headerControls{ display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+     .reporterPicker{ display:flex; flex-direction:column; gap:4px; }
+     .reporterPicker label{ font-size:12px; color:var(--muted); }
+     .reporterPicker select{
+       font: inherit; font-size:14px; color:var(--text);
+       background:#0b0c0f; border:1px solid var(--border); padding:8px 10px; min-width:170px;
+     }
+
+     /* Unit toggle -- see index.template.html's identical block for the
+        full reasoning. */
+     .unitToggle{ display:flex; flex-direction:column; gap:4px; }
+     .unitToggle .toggleLabel{ font-size:12px; color:var(--muted); }
+     .unitToggleGroup{ display:inline-flex; border:1px solid var(--border); background:#0b0c0f; }
+     .unitToggleBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       background:transparent; border:none; padding:9px 14px; cursor:pointer;
+     }
+     .unitToggleBtn:hover{ color:var(--text); }
+     .unitToggleBtn.active{ background:var(--turq); color:#07140f; cursor:default; }
+     .footer{ margin-top:24px; padding-top:14px; border-top:1px solid var(--border); color:var(--muted); max-width:85ch; font-size:12.5px; line-height:1.5; }
+     .footer p{ margin:0 0 6px; }
+     .footer p:last-child{ margin-bottom:0; }
+     .footer strong{ color:rgba(240,238,239,.85); font-weight:600; }
+     .notes{ margin-top:10px; }
+     .notes summary{ font-size:12px; color:var(--turq); cursor:pointer; }
+     .notes ul{ margin:8px 0 0; padding-left:18px; }
+     .notes li{ margin-bottom:4px; }
+
+     canvas{ width:100% !important; display:block; }
+
+     /* ====== Layout: main content + right-hand filter sidebar (same
+        pattern as the other pages) ====== */
+     .layout{ display:flex; align-items:flex-start; gap:18px; }
+     .main{ flex:1; min-width:0; }
+     .sidebar{ width:280px; flex-shrink:0; position:sticky; top:18px; }
+     @media (max-width:900px){
+       .layout{ flex-direction:column; }
+       .sidebar{ width:100%; position:static; order:2; }
+     }
+
+     /* Year tabs -- same visual pattern as the view-tabs on dashboard.html,
+        just switching which year is active instead of which view. */
+     .yearTabs{ margin-top:10px; display:flex; gap:4px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+     .yearTabBtn{
+       font: inherit; font-size:14px; font-weight:600; color:var(--muted);
+       background:transparent; border:none; border-bottom:2px solid transparent;
+       padding:10px 14px; cursor:pointer; margin-bottom:-1px;
+     }
+     .yearTabBtn:hover{ color:var(--text); }
+     .yearTabBtn.active{ color:var(--turq); border-bottom-color:var(--turq); }
+
+     /* No cards, no borders between sections -- the bar list, map, filter
+        sidebar and monthly chart all sit directly on the page background
+        so the whole tab reads as one continuous view, the way the
+        reference tool this page is modelled on does it (a single dark
+        canvas, sections separated by whitespace and type, never by a
+        boxed panel). Spacing between sections is kept tight for the same
+        reason: it should feel like one thing, not a grid of cards.
+
+        Partner list (left) + map/monthly column (right), side by side,
+        never overlapping. align-items:stretch makes the two columns match
+        height automatically: whatever the map + monthly chart add up to
+        on the right becomes the bar list's height too, so the list is as
+        "long" as the rest of the view and needs scrolling far less often.
+        .partnerListScroll is the scroll *viewport* (stretches to match
+        .rightCol's height); .partnerListInner is what actually grows to
+        fit however many countries there are for the selected year, so a
+        long list scrolls at a consistent 22px-per-bar instead of Chart.js
+        squeezing every bar into a fixed height and auto-skipping labels
+        to avoid overlap once there isn't enough room for all of them. */
+     .chartsPanel{ margin-top:10px; }
+     .splitRow{ display:flex; gap:8px; align-items:stretch; }
+     .partnerListPanel{ width:260px; flex-shrink:0; display:flex; flex-direction:column; }
+     .partnerListScroll{ flex:1; overflow-y:auto; }
+     .rightCol{ flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+     #map{ width:100%; height:260px; background: var(--black); }
+     @media (max-width:900px){
+       .splitRow{ flex-direction:column; }
+       .partnerListPanel{ width:100%; }
+       .partnerListScroll{ flex:none; height:320px; }
+       #map{ height:300px; }
+     }
+
+     #monthlyChart{ height:280px !important; }
+
+     .downloadBtn{
+       display:inline-flex; align-items:center; gap:6px; margin-top:12px;
+       font: inherit; font-size:13px; color:var(--turq); background:transparent;
+       border:1px solid var(--border); padding:7px 12px; cursor:pointer;
+     }
+     .downloadBtn:hover{ border-color:var(--turq); }
+
+     /* Leaflet chrome, restyled to fit the dark theme */
+     .leaflet-control-zoom a{ background: rgba(0,0,0,.55); color: var(--offwhite); border: 1px solid rgba(240,238,239,.18); }
+     /* Leaflet's own CSS sets the background via the more specific
+        ".leaflet-container .leaflet-control-attribution" selector, which
+        beats a plain ".leaflet-control-attribution" rule regardless of
+        load order -- matching that selector here is what actually lets
+        this override the default white bar. Kept small and low-contrast
+        (required attribution text, but not meant to draw the eye). */
+     .leaflet-container .leaflet-control-attribution{ background: rgba(1,2,0,.5); }
+     .leaflet-control-attribution{ color: rgba(240,238,239,.55); font-size:10px; padding:1px 6px; }
+     .leaflet-control-attribution a{ color: rgba(240,238,239,.7); }
+     .leaflet-tooltip{ background: #0b0c0f; color: var(--offwhite); border: 1px solid rgba(240,238,239,.18); border-radius: 0; }
+     .leaflet-tooltip-top:before{ border-top-color: #0b0c0f; }
+
+     .mapLegend{ background: rgba(1,2,0,.85); border: 1px solid rgba(240,238,239,.18); padding: 8px 10px; font-size: 12px; color: var(--offwhite); line-height: 1.6; }
+     .mapLegend .row{ display:flex; align-items:center; gap:6px; }
+     .mapLegend .swatch{ width:12px; height:12px; display:inline-block; flex-shrink:0; }
+
+     /* ====== Filter sidebar (category + geography) -- no card/border, just
+        type and spacing, so it reads as part of the same canvas as the
+        charts rather than a separate boxed widget. ====== */
+     .filterPanel h2{ margin:0 0 10px; font-size:13px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:rgba(240,238,239,.70); }
+     .filterRow{ display:flex; flex-direction:column; gap:18px; }
+
+     .geoFilter{ display:flex; flex-direction:column; gap:8px; font-size:13.5px; }
+     .geoFilter label{ display:flex; align-items:center; gap:5px; cursor:pointer; }
+
+     .categoryFilter{ display:flex; flex-direction:column; gap:16px; }
+     .filterGroup > label,
+     .groupLabel{ font-size:13.5px; font-weight:600; display:flex; align-items:center; gap:6px; cursor:pointer; }
+     .filterSubList{ margin:6px 0 0 20px; display:flex; flex-direction:column; gap:6px; }
+     .filterLeaf label{ font-size:13px; font-weight:400; display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--muted); }
+     .filterLeaf.filterSub label{ color:var(--text); }
+     .filterCodes{ margin:2px 0 0 20px; }
+     .filterCodes summary{ font-size:11.5px; color:rgba(240,238,239,.5); cursor:pointer; }
+     .filterCodes ul{ margin:4px 0 0; padding-left:16px; font-size:11.5px; color:rgba(240,238,239,.6); line-height:1.6; }
+     .filterCodes code{ color:var(--turq); }
+     input[type=checkbox], input[type=radio]{ accent-color: var(--turq); }
+
+     @media (max-width:760px){
+       h1{font-size:24px;}
+     }
+   </style>
+</head>
+
+<body>
+<div class="wrap">
+   <div class="siteTabs">__SITE_TABS_HTML__</div>
+
+   <div class="header">
+     <div>
+       <h1><span id="reporterNameInTitle">Austria</span>'s Cattle Exports by Month</h1>
+     </div>
+     <div class="headerControls">
+       <div class="unitToggle">
+         <span class="toggleLabel">Unit</span>
+         <div class="unitToggleGroup" id="unitToggle">
+           <button type="button" class="unitToggleBtn active" data-unit="animals">Animals</button>
+           <button type="button" class="unitToggleBtn" data-unit="eur">Trade value (€)</button>
+         </div>
+       </div>
+       <div class="reporterPicker">
+         <label for="reporterSelect">Reporting country</label>
+         <select id="reporterSelect"></select>
+       </div>
+     </div>
+   </div>
+
+   <div class="layout">
+     <div class="main">
+       <div class="yearTabs" id="yearTabs"></div>
+
+       <div class="chartsPanel">
+         <div class="splitRow">
+           <div class="partnerListPanel">
+             <div class="partnerListScroll">
+               <div class="partnerListInner">
+                 <canvas id="partnersChart"></canvas>
+               </div>
+             </div>
+           </div>
+
+           <div class="rightCol">
+             <div class="mapPanel">
+               <div id="map"></div>
+             </div>
+
+             <div class="monthlyPanel">
+               <canvas id="monthlyChart"></canvas>
+             </div>
+           </div>
+         </div>
+       </div>
+
+       <div class="footer">
+         <button class="downloadBtn" id="downloadBtn">⬇ Download data (CSV)</button>
+         <p style="margin-top:12px;">
+           Live cattle exports from <span id="reporterNameInFooter">Austria</span>, __YEAR_RANGE__.
+           Source: Eurostat Comext, dataset DS-045409.
+         </p>
+         <p>
+           <strong>Included:</strong> breeding cattle (pure-bred), slaughter cattle, other cattle (rearing/store).
+           <strong>Not included:</strong> buffalo.
+         </p>
+         __PROJECT_NOTES_HTML__
+       </div>
+     </div>
+
+     <aside class="sidebar">
+       <div class="filterPanel">
+         <h2>Filter</h2>
+         <div class="filterRow">
+           <div class="geoFilter" id="geoFilter">
+             <label><input type="radio" name="geo" value="all" checked> All countries</label>
+             <label><input type="radio" name="geo" value="eu"> EU only</label>
+             <label><input type="radio" name="geo" value="noneu"> Non-EU only</label>
+           </div>
+           <div class="categoryFilter" id="categoryFilter">__CATEGORY_FILTER_HTML__</div>
+         </div>
+       </div>
+     </aside>
+   </div>
+</div>
+
+<script>
+   // ====== Embedded data ======
+   // build_monthly.py replaced these placeholders with real JSON when it
+   // built this page.
+   //
+   // "let", not "const": Austria's own data is what's baked in here at
+   // build time, but switchReporter() further down reassigns all four
+   // wholesale when a different reporting country is picked. The year
+   // tabs built from "years" a little further down are NOT rebuilt on a
+   // reporter switch -- every reporter this project has fetched covers
+   // the same 2015-2025 range, so the existing tabs stay valid as-is.
+   let partnersByYear = __PARTNERS_BY_YEAR_JSON__;
+   let monthlyByYear = __MONTHLY_BY_YEAR_JSON__;
+   let countriesGeoJson = __COUNTRIES_GEOJSON__;
+   let years = __YEARS_JSON__;
+   // {code, name} for every reporter this project has a pipeline for.
+   const REPORTERS = __REPORTERS_JSON__;
+   // {key, label, categories} for the five single-select category views --
+   // see scripts/product_categories.py's VIEWS for the full reasoning.
+   const VIEWS = __VIEWS_JSON__;
+   // Replaces the old baked-in "isExporter" property everywhere this page
+   // needs to know "is this the country whose exports we're looking at."
+   let currentReporter = 'AT';
+   // See index.template.html's identical declaration for the full
+   // reasoning -- tracks the most recently requested country so a
+   // late-arriving load for an earlier, superseded pick can't clobber it.
+   let pendingReporter = 'AT';
+   // Austria's data never needs re-fetching once the page has loaded.
+   const austriaData = { partnersByYear, monthlyByYear, geojson: countriesGeoJson, years };
+
+   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+   // ====== Colours / styling ======
+   const css = getComputedStyle(document.documentElement);
+   const TURQ = css.getPropertyValue('--turq').trim();
+   const PINK = css.getPropertyValue('--pink').trim();
+   const GRID = css.getPropertyValue('--grid').trim();
+   const TEXT = css.getPropertyValue('--muted').trim();
+   const fmt = new Intl.NumberFormat('en-GB');
+   // No decimal places -- these are large trade totals, where cents would
+   // just be visual noise. Same formatter as index.html's.
+   const fmtEur = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+
+   function rgba(hex, a){
+     const h = hex.replace('#','');
+     const r = parseInt(h.slice(0,2),16);
+     const g = parseInt(h.slice(2,4),16);
+     const b = parseInt(h.slice(4,6),16);
+     return `rgba(${r},${g},${b},${a})`;
+   }
+
+   // ========================================================================
+   // Filter state (category + geography) -- one shared state for the
+   // partner list, the map, and the monthly chart, same pattern as
+   // dashboard.html.
+   // ========================================================================
+
+   let selectedCategories = new Set(VIEWS.find(v => v.key === 'all').categories);
+   let geoFilter = 'all';
+   // "animals" (head count) or "eur" (trade value) -- same idea as
+   // index.html's unitMode.
+   let unitMode = 'animals';
+   let selectedYear = years[years.length - 1];
+
+   document.querySelectorAll('#unitToggle .unitToggleBtn').forEach(btn => {
+     btn.addEventListener('click', () => {
+       if (btn.classList.contains('active')) return;
+       unitMode = btn.dataset.unit;
+       document.querySelectorAll('#unitToggle .unitToggleBtn').forEach(b => b.classList.toggle('active', b === btn));
+       onFilterChanged();
+     });
+   });
+
+   // The one country (by ISO2 code) currently picked out on both the bar
+   // chart and the map, whichever one the click came from -- null means
+   // nothing is selected. currentBreaks is the map's current choropleth
+   // buckets, kept around so a selection can be applied/reverted without
+   // recomputing them.
+   let selectedCountryCode = null;
+   let currentBreaks = [];
+
+   let renderMapFn = null;
+
+   function onFilterChanged(){
+     renderPartners();
+     renderMonthly();
+     if (renderMapFn) renderMapFn();
+   }
+
+   document.querySelectorAll('#categoryFilter .viewRadio').forEach(radio => {
+     radio.addEventListener('change', () => {
+       recomputeCategories();
+       onFilterChanged();
+     });
+   });
+
+   document.querySelectorAll('#geoFilter input[name="geo"]').forEach(radio => {
+     radio.addEventListener('change', () => {
+       geoFilter = radio.value;
+       onFilterChanged();
+     });
+   });
+
+   function recomputeCategories(){
+     const checked = document.querySelector('#categoryFilter .viewRadio:checked');
+     const view = VIEWS.find(v => v.key === checked.value);
+     selectedCategories = new Set(view.categories);
+   }
+
+   function partnerMatchesGeo(partner){
+     if (geoFilter === 'all') return true;
+     return geoFilter === 'eu' ? partner.isEU : !partner.isEU;
+   }
+
+   function quantityForPartner(partner){
+     const source = unitMode === 'eur' ? partner.byCategoryValueEur : partner.byCategory;
+     let sum = 0;
+     selectedCategories.forEach(cat => { sum += (source && source[cat]) || 0; });
+     return sum;
+   }
+
+   // Formats a value for display, honouring the current unit -- plain
+   // "12,345 animals" or a proper "€12,345" currency string. Same
+   // reasoning as index.html's formatUnit/formatUnitShort.
+   function formatUnit(value){
+     return unitMode === 'eur' ? fmtEur.format(value) : `${fmt.format(value)} animals`;
+   }
+   function formatUnitShort(value){
+     return unitMode === 'eur' ? fmtEur.format(value) : fmt.format(value);
+   }
+   function datasetLabel(){
+     return unitMode === 'eur' ? 'Export value' : 'Animals exported';
+   }
+
+   // ========================================================================
+   // Year tabs
+   // ========================================================================
+
+   const yearTabsEl = document.getElementById('yearTabs');
+   years.forEach(year => {
+     const btn = document.createElement('button');
+     btn.className = 'yearTabBtn' + (year === selectedYear ? ' active' : '');
+     btn.textContent = year;
+     btn.dataset.year = year;
+     btn.addEventListener('click', () => {
+       selectedYear = year;
+       document.querySelectorAll('.yearTabBtn').forEach(b => b.classList.toggle('active', b === btn));
+       onFilterChanged();
+     });
+     yearTabsEl.appendChild(btn);
+   });
+
+   // ========================================================================
+   // Partner list (destinations for the selected year, all of them, not
+   // just a top 10 -- sorted by quantity so the biggest destinations are
+   // easy to spot, but nothing is cut off the list).
+   // ========================================================================
+
+   function partnersForSelectedYear(){
+     return (partnersByYear[selectedYear] || [])
+       .filter(partnerMatchesGeo)
+       .map(p => ({ code: p.code, name: p.name, quantity: quantityForPartner(p) }))
+       .filter(p => p.quantity > 0)
+       .sort((a, b) => b.quantity - a.quantity);
+   }
+
+   function maxQuantity(rows){
+     return rows.reduce((max, r) => Math.max(max, r.quantity), 0);
+   }
+
+   const partnersCanvas = document.getElementById('partnersChart');
+   const partnerListScrollEl = document.querySelector('.partnerListScroll');
+   // This is the inner wrapper, not the outer .partnerListScroll viewport
+   // (which stays fixed at max-height:600px and just scrolls) -- Chart.js
+   // reads *this* element's size to decide how tall to draw the chart, so
+   // resizing it (not the fixed-height viewport around it) is what gives
+   // every bar its full 22px instead of Chart.js squeezing all of them
+   // into 600px and auto-skipping labels once there are too many to fit.
+   const partnersInner = partnersCanvas.parentElement;
+
+   // The bar list column is narrow, so long country names ("Bosnia and
+   // Herzegovina") don't fit next to the other UI at full length.
+   // Chart.js's own auto-width for the y-axis tries to reserve enough
+   // space for the longest label, but when the canvas itself is too
+   // narrow for that it silently clips letters off the *front* of the
+   // label instead of erroring -- so the axis width here is fixed to a
+   // known value, and any label that doesn't fit within it is truncated
+   // with an ellipsis instead, which degrades predictably no matter how
+   // narrow the column gets.
+   const partnersMeasureCtx = partnersCanvas.getContext('2d');
+   const Y_LABEL_FONT = "12px 'Helvetica Neue', 'Helvetica', Arial, sans-serif";
+   const Y_LABEL_MAX_WIDTH = 106;
+   const Y_AXIS_WIDTH = 120;
+
+   function truncateYLabel(text){
+     partnersMeasureCtx.save();
+     partnersMeasureCtx.font = Y_LABEL_FONT;
+     let result = text;
+     if (partnersMeasureCtx.measureText(result).width > Y_LABEL_MAX_WIDTH){
+       while (result.length > 1 && partnersMeasureCtx.measureText(result + '…').width > Y_LABEL_MAX_WIDTH){
+         result = result.slice(0, -1);
+       }
+       result = result + '…';
+     }
+     partnersMeasureCtx.restore();
+     return result;
+   }
+
+   // Kept up to date on every render so click handlers and the selection
+   // functions further down can look up which country a given bar index
+   // (or a given ISO2 code) corresponds to.
+   let currentPartnerRows = partnersForSelectedYear();
+   partnersInner.style.height = `${Math.max(currentPartnerRows.length * 22, 200)}px`;
+
+   // Draws the exact figure just past the end of each bar. With the x-axis
+   // hidden (see options.scales.x below, replacing the old gridlines/tick
+   // labels along the bottom) this is the only place the number is shown,
+   // so every bar gets its own precise label instead of a shared axis scale.
+   // The selected country's number is drawn in the same pink as its bar
+   // and country name, so all three highlight together.
+   const barValueLabelsPlugin = {
+     id: 'barValueLabels',
+     afterDatasetsDraw(chart){
+       const { ctx } = chart;
+       const meta = chart.getDatasetMeta(0);
+       ctx.save();
+       ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+       ctx.textAlign = 'left';
+       ctx.textBaseline = 'middle';
+       meta.data.forEach((bar, idx) => {
+         const value = chart.data.datasets[0].data[idx];
+         if (value === undefined) return;
+         const row = currentPartnerRows[idx];
+         ctx.fillStyle = (row && row.code === selectedCountryCode) ? PINK : TEXT;
+         ctx.fillText(formatUnitShort(value), bar.x + 6, bar.y);
+       });
+       ctx.restore();
+     }
+   };
+
+   // Chart.js's built-in element hit-testing (the `elements` array passed
+   // to onClick/onHover) only matches the bar rectangle itself -- clicking
+   // the country name (drawn by the y-axis) or the value number (drawn by
+   // barValueLabelsPlugin) wouldn't register at all. Both of those sit at
+   // the same row height as their bar, so hit-testing by *row* (Y position
+   // only, ignoring X) makes the whole row clickable instead of just the
+   // bar segment.
+   function partnerRowIndexAtY(y){
+     const scale = partnersChart.scales.y;
+     if (y < scale.top || y > scale.bottom) return -1;
+     const index = Math.round(scale.getValueForPixel(y));
+     return (index >= 0 && index < currentPartnerRows.length) ? index : -1;
+   }
+
+   const partnersChart = new Chart(partnersCanvas, {
+     type: 'bar',
+     data: {
+       labels: currentPartnerRows.map(r => r.name),
+       datasets: [{
+         label: datasetLabel(),
+         data: currentPartnerRows.map(r => r.quantity),
+         backgroundColor: currentPartnerRows.map(() => TURQ),
+         hoverBackgroundColor: rgba(TURQ, 0.95),
+         borderRadius: 0,
+         borderSkipped: false,
+         barPercentage: 0.8,
+         categoryPercentage: 0.7
+       }]
+     },
+     plugins: [barValueLabelsPlugin],
+     options: {
+       indexAxis: 'y',
+       responsive: true,
+       maintainAspectRatio: false,
+       // Extra right-hand padding so the value label past the longest bar
+       // never gets clipped by the canvas edge.
+       layout: { padding: { right: 56 } },
+       // Row selection is wired up below via native canvas listeners, not
+       // onClick/onHover here -- Chart.js only invokes those for events
+       // inside its own computed "chart area", so a click on the country
+       // name (left of the axis) or the value number (right of the bar)
+       // would silently never fire them at all.
+       plugins: {
+         legend: { display: false },
+         tooltip: { callbacks: { label: (c) => formatUnit(c.raw) } }
+       },
+       scales: {
+         x: { display: false, beginAtZero: true, suggestedMax: (maxQuantity(currentPartnerRows) || 1) * 1.15 },
+         // Fixed axis width + truncateYLabel (defined above) instead of an
+         // auto-computed width -- see the comment by Y_AXIS_WIDTH for why.
+         // ticks.color as a function re-runs on every update(), so the
+         // selected country's name turns pink along with its bar and number.
+         y: {
+           ticks: {
+             color: (ctx) => {
+               const row = currentPartnerRows[ctx.index];
+               return (row && row.code === selectedCountryCode) ? PINK : TEXT;
+             },
+             callback: function(value){
+               return truncateYLabel(this.getLabelForValue(value));
+             }
+           },
+           grid: { display: false },
+           afterFit: (scale) => { scale.width = Y_AXIS_WIDTH; }
+         }
+       }
+     }
+   });
+
+   // Native listeners (not Chart.js's onClick/onHover) so the whole row --
+   // country name, bar, and value number alike -- is clickable, not just
+   // the bar segment itself.
+   partnersCanvas.addEventListener('click', (nativeEvt) => {
+     const rect = partnersCanvas.getBoundingClientRect();
+     const idx = partnerRowIndexAtY(nativeEvt.clientY - rect.top);
+     if (idx === -1) return;
+     selectCountry(currentPartnerRows[idx].code);
+   });
+   partnersCanvas.addEventListener('mousemove', (nativeEvt) => {
+     const rect = partnersCanvas.getBoundingClientRect();
+     const idx = partnerRowIndexAtY(nativeEvt.clientY - rect.top);
+     partnersCanvas.style.cursor = idx === -1 ? 'default' : 'pointer';
+   });
+
+   function renderPartners(){
+     currentPartnerRows = partnersForSelectedYear();
+     partnersInner.style.height = `${Math.max(currentPartnerRows.length * 22, 200)}px`;
+     partnersChart.data.labels = currentPartnerRows.map(r => r.name);
+     partnersChart.data.datasets[0].label = datasetLabel();
+     partnersChart.data.datasets[0].data = currentPartnerRows.map(r => r.quantity);
+     partnersChart.options.scales.x.suggestedMax = (maxQuantity(currentPartnerRows) || 1) * 1.15;
+     partnersChart.resize();
+     applySelectionToBars();
+   }
+
+   // ========================================================================
+   // Monthly chart -- total across the selected categories and countries,
+   // one point per month of the selected year.
+   // ========================================================================
+
+   function monthlyTotalsForSelectedYear(){
+     const months = monthlyByYear[selectedYear] || {};
+     return Object.keys(months).sort().map(month => {
+       const total = months[month]
+         .filter(partnerMatchesGeo)
+         .reduce((sum, p) => sum + quantityForPartner(p), 0);
+       return { month, total };
+     });
+   }
+
+   const initialMonthly = monthlyTotalsForSelectedYear();
+
+   // Fades from a solid teal at the line down to fully transparent at the
+   // bottom of the chart -- a flat rgba fill reads flat; a gradient reads
+   // like the area actually has depth. Chart.js calls this once the chart
+   // area is known, not before, so it can size the gradient correctly.
+   function monthlyFillGradient(context){
+     const { chart } = context;
+     const { ctx, chartArea } = chart;
+     if (!chartArea) return null;
+     const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+     gradient.addColorStop(0, rgba(TURQ, 0.35));
+     gradient.addColorStop(1, rgba(TURQ, 0));
+     return gradient;
+   }
+
+   // Prints the exact monthly figure above each point, the way the
+   // reference tool this page is modelled on does -- with only 12 points
+   // and no x-axis gridlines to compete with, direct labels read cleaner
+   // than a hover-only tooltip.
+   const monthlyValueLabelsPlugin = {
+     id: 'monthlyValueLabels',
+     afterDatasetsDraw(chart){
+       const { ctx } = chart;
+       const meta = chart.getDatasetMeta(0);
+       ctx.save();
+       ctx.font = '11px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+       ctx.fillStyle = TEXT;
+       ctx.textAlign = 'center';
+       ctx.textBaseline = 'bottom';
+       meta.data.forEach((point, idx) => {
+         const value = chart.data.datasets[0].data[idx];
+         if (value === undefined) return;
+         ctx.fillText(formatUnitShort(value), point.x, point.y - 10);
+       });
+       ctx.restore();
+     }
+   };
+
+   const monthlyChart = new Chart(document.getElementById('monthlyChart'), {
+     type: 'line',
+     data: {
+       labels: initialMonthly.map(m => MONTH_NAMES[parseInt(m.month.slice(5, 7), 10) - 1]),
+       datasets: [{
+         label: datasetLabel(),
+         data: initialMonthly.map(m => m.total),
+         borderColor: TURQ,
+         borderWidth: 2.5,
+         backgroundColor: monthlyFillGradient,
+         pointBackgroundColor: TURQ,
+         pointBorderWidth: 0,
+         pointRadius: 3,
+         pointHoverRadius: 6,
+         tension: 0.3,
+         fill: true
+       }]
+     },
+     plugins: [monthlyValueLabelsPlugin],
+     options: {
+       responsive: true,
+       maintainAspectRatio: false,
+       // Headroom above the highest point so its value label never clips
+       // against the top of the canvas.
+       layout: { padding: { top: 20 } },
+       plugins: {
+         legend: { display: false },
+         tooltip: { callbacks: { label: (c) => formatUnit(c.raw) } }
+       },
+       scales: {
+         x: { ticks: { color: TEXT }, grid: { display: false } },
+         y: {
+           beginAtZero: true,
+           ticks: { color: TEXT, maxTicksLimit: 4, callback: v => formatUnitShort(v) },
+           grid: { color: GRID }
+         }
+       }
+     }
+   });
+
+   function renderMonthly(){
+     const rows = monthlyTotalsForSelectedYear();
+     monthlyChart.data.labels = rows.map(m => MONTH_NAMES[parseInt(m.month.slice(5, 7), 10) - 1]);
+     monthlyChart.data.datasets[0].label = datasetLabel();
+     monthlyChart.data.datasets[0].data = rows.map(m => m.total);
+     monthlyChart.update();
+   }
+
+   // ========================================================================
+   // Map -- same quantile-choropleth approach as map.html, just driven by
+   // the year tabs above instead of a slider.
+   // ========================================================================
+
+   const RAMP = ['#DCEEEA', '#A9D4C9', '#6FB2A5', '#3F8577', '#204F45'];
+   const NO_DATA_COLOR = '#141414';
+
+   function quantileBreaks(sortedValues, bucketCount){
+     const breaks = [];
+     for (let i = 1; i < bucketCount; i++){
+       const idx = Math.floor((sortedValues.length * i) / bucketCount);
+       breaks.push(sortedValues[Math.min(idx, sortedValues.length - 1)]);
+     }
+     return breaks;
+   }
+
+   function colorFor(value, breaks){
+     for (let i = 0; i < breaks.length; i++){
+       if (value <= breaks[i]) return RAMP[i];
+     }
+     return RAMP[RAMP.length - 1];
+   }
+
+   function countryMatchesGeo(props){
+     if (geoFilter === 'all') return true;
+     return geoFilter === 'eu' ? props.isEU : !props.isEU;
+   }
+
+   function valueFor(props, year){
+     const values = unitMode === 'eur' ? props.valuesEur : props.values;
+     if (!values || !countryMatchesGeo(props)) return undefined;
+     const byCategory = values[year];
+     if (!byCategory) return undefined;
+     let sum = 0;
+     selectedCategories.forEach(cat => { sum += byCategory[cat] || 0; });
+     return sum > 0 ? sum : undefined;
+   }
+
+   const map = L.map('map', { zoomControl: true, worldCopyJump: true }).setView([42, 35], 3);
+   // Zoom control is top-left and the legend is bottom-right, so top-right
+   // is the free corner for the attribution line.
+   map.attributionControl.setPosition('topright');
+
+   // Esri's free "Dark Gray Canvas" basemap -- see map.template.html's
+   // identical block for the full reasoning (switched from CARTO's
+   // "dark_all" tiles after they started serving a watermarked "API KEY
+   // REQUIRED" placeholder in place of real tiles, with no network-level
+   // error to catch it by).
+   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+     maxZoom: 16,
+     attribution: 'Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, and the GIS community'
+   }).addTo(map);
+
+   const legend = L.control({ position: 'bottomright' });
+   legend.onAdd = function(){
+     this._div = L.DomUtil.create('div', 'mapLegend');
+     return this._div;
+   };
+   legend.addTo(map);
+
+   function legendHeading(){
+     const label = unitMode === 'eur' ? 'Exports (trade value)' : 'Exports (animals)';
+     return `<div style="margin-bottom:4px;"><strong>${label}</strong></div>` +
+       '<div style="margin-bottom:4px; font-size:11px; color:rgba(240,238,239,.5);">Same scale every year</div>';
+   }
+
+   function updateLegend(breaks){
+     if (!breaks.length){
+       legend._div.innerHTML = legendHeading() + '<div class="row">No data for this selection</div>';
+       return;
+     }
+     const labels = [`< ${formatUnitShort(breaks[0])}`];
+     for (let i = 0; i < breaks.length - 1; i++){
+       labels.push(`${formatUnitShort(breaks[i])} – ${formatUnitShort(breaks[i + 1])}`);
+     }
+     labels.push(`> ${formatUnitShort(breaks[breaks.length - 1])}`);
+
+     legend._div.innerHTML =
+       legendHeading() +
+       RAMP.map((color, i) =>
+         `<div class="row"><span class="swatch" style="background:${color}"></span>${labels[i]}</div>`
+       ).join('') +
+       `<div class="row"><span class="swatch" style="background:${NO_DATA_COLOR}"></span>no data</div>`;
+   }
+
+   let geoLayer = null;
+
+   function styleFor(feature, breaks){
+     const props = feature.properties;
+     const value = valueFor(props, selectedYear);
+
+     const base = {
+       weight: 1,
+       color: 'rgba(240,238,239,.25)',
+       fillOpacity: 0.9,
+       fillColor: value === undefined ? NO_DATA_COLOR : colorFor(value, breaks)
+     };
+
+     if (props.code === currentReporter){
+       base.color = PINK;
+       base.weight = 3;
+       base.fillColor = PINK;
+       base.fillOpacity = 0.55;
+     }
+
+     return base;
+   }
+
+   function tooltipFor(feature){
+     const props = feature.properties;
+     if (props.code === currentReporter) return `<b>${props.name}</b><br>Reporting country`;
+
+     if (!countryMatchesGeo(props)) return `<b>${props.name}</b><br>Not in the current filter`;
+
+     const value = valueFor(props, selectedYear);
+     const line = value === undefined ? 'No exports (in this selection)' : formatUnit(value);
+     return `<b>${props.name}</b><br>${line}`;
+   }
+
+   // Pools every year's values together (for whatever category/geo filter
+   // is active) so the break points stay the same no matter which year
+   // tab is selected -- see the identical comment in map.template.html
+   // for the full reasoning.
+   function pooledValuesAcrossYears(){
+     const values = [];
+     countriesGeoJson.features.forEach(f => {
+       years.forEach(year => {
+         const v = valueFor(f.properties, year);
+         if (v !== undefined) values.push(v);
+       });
+     });
+     return values.sort((a, b) => a - b);
+   }
+
+   // ARCHIVED -- the previous per-year approach, kept in case we want to
+   // switch back. See map.template.html's identical archived function.
+   function valuesForSingleYear(year){
+     return countriesGeoJson.features
+       .map(f => valueFor(f.properties, year))
+       .filter(v => v !== undefined)
+       .sort((a, b) => a - b);
+   }
+
+   function renderMap(){
+     const breaks = quantileBreaks(pooledValuesAcrossYears(), RAMP.length);
+     updateLegend(breaks);
+
+     currentBreaks = breaks;
+
+     if (geoLayer) geoLayer.remove();
+     geoLayer = L.geoJSON(countriesGeoJson, {
+       style: (feature) => styleFor(feature, breaks),
+       onEachFeature: (feature, layer) => {
+         const props = feature.properties;
+         layer.bindTooltip(tooltipFor(feature), { sticky: true, opacity: 0.95 });
+         layer.on('mouseover', () => {
+           if (props.code === selectedCountryCode) return;
+           layer.setStyle({ weight: props.code === currentReporter ? 4 : 2 });
+         });
+         layer.on('mouseout', () => {
+           if (props.code === selectedCountryCode) return;
+           layer.setStyle(styleFor(feature, breaks));
+         });
+         if (props.code !== currentReporter){
+           layer.on('click', () => selectCountry(props.code));
+         }
+       }
+     }).addTo(map);
+
+     applySelectionToMap();
+   }
+   renderMap();
+   renderMapFn = renderMap;
+
+   // ========================================================================
+   // Selection state -- clicking a bar or a country picks the same country
+   // out on both the bar chart (pink bar) and the map (pink border,
+   // brought to front, tooltip opened), and clicking it again clears the
+   // selection. This is the one piece of state that reaches back into both
+   // the partner-list section above and the map section directly above it.
+   // ========================================================================
+
+   function selectCountry(code){
+     selectedCountryCode = (selectedCountryCode === code) ? null : code;
+     applySelectionToBars();
+     applySelectionToMap();
+   }
+
+   function applySelectionToBars(){
+     partnersChart.data.datasets[0].backgroundColor = currentPartnerRows.map(r =>
+       r.code === selectedCountryCode ? PINK : TURQ
+     );
+     partnersChart.update();
+     if (selectedCountryCode){
+       const idx = currentPartnerRows.findIndex(r => r.code === selectedCountryCode);
+       if (idx !== -1) scrollBarIntoView(idx, currentPartnerRows.length);
+     }
+   }
+
+   function applySelectionToMap(){
+     if (!geoLayer) return;
+     geoLayer.eachLayer(layer => {
+       const props = layer.feature.properties;
+       if (props.code === currentReporter) return;
+       if (props.code === selectedCountryCode){
+         layer.setStyle({ weight: 3, color: PINK });
+         layer.bringToFront();
+         layer.openTooltip();
+       } else {
+         layer.setStyle(styleFor(layer.feature, currentBreaks));
+         layer.closeTooltip();
+       }
+     });
+   }
+
+   function scrollBarIntoView(idx, totalRows){
+     const rowHeight = partnersInner.offsetHeight / totalRows;
+     const barTop = idx * rowHeight;
+     const barBottom = barTop + rowHeight;
+     if (barTop < partnerListScrollEl.scrollTop){
+       partnerListScrollEl.scrollTop = barTop;
+     } else if (barBottom > partnerListScrollEl.scrollTop + partnerListScrollEl.clientHeight){
+       partnerListScrollEl.scrollTop = barBottom - partnerListScrollEl.clientHeight;
+     }
+   }
+
+   // ========================================================================
+   // Download data -- builds a CSV client-side from the currently visible
+   // monthly figures (selected year + filters) and triggers a normal
+   // browser download. No server involved, matching the rest of this
+   // static site.
+   // ========================================================================
+
+   document.getElementById('downloadBtn').addEventListener('click', () => {
+     const rows = monthlyTotalsForSelectedYear();
+     const columnName = unitMode === 'eur' ? 'trade_value_eur' : 'animals_exported';
+     const lines = [`month,${columnName}`];
+     rows.forEach(r => lines.push(`${r.month},${r.total}`));
+     const csv = lines.join('\n');
+
+     const blob = new Blob([csv], { type: 'text/csv' });
+     const url = URL.createObjectURL(blob);
+     const link = document.createElement('a');
+     link.href = url;
+     const unitSuffix = unitMode === 'eur' ? '_eur' : '';
+     link.download = `${currentReporter.toLowerCase()}_cattle_exports_${selectedYear}${unitSuffix}.csv`;
+     link.click();
+     URL.revokeObjectURL(url);
+   });
+
+   // ========================================================================
+   // Reporter picker -- switch which country's own trade declarations the
+   // whole page shows. See index.template.html's identical section for
+   // the full reasoning (in short: a <script src> tag, not fetch(), since
+   // this page needs to keep working when opened directly as a local
+   // file, and fetch() of a relative path is blocked under file://).
+   // ========================================================================
+
+   window.REPORTER_DATA = window.REPORTER_DATA || {};
+   const reporterSelect = document.getElementById('reporterSelect');
+   const reporterNameInTitle = document.getElementById('reporterNameInTitle');
+   const reporterNameInFooter = document.getElementById('reporterNameInFooter');
+
+   REPORTERS.forEach(r => {
+     const opt = document.createElement('option');
+     opt.value = r.code;
+     opt.textContent = r.name;
+     reporterSelect.appendChild(opt);
+   });
+   reporterSelect.value = currentReporter;
+
+   // See index.template.html's identical block for the full reasoning --
+   // the URL's own ?reporter= param (rewritten onto every tab link below)
+   // is the primary persistence mechanism since it works in every browser;
+   // localStorage is a Chromium-only fallback (Firefox isolates each
+   // file:// page into its own origin, so it can't share localStorage the
+   // way Chromium/Edge do).
+   function updateTabLinksForReporter(code = currentReporter){
+     // Always include ?reporter=, even for Austria -- see
+     // index.template.html's identical block for the full reasoning
+     // (otherwise a destination page with no URL instruction falls back
+     // to its own possibly-stale localStorage).
+     document.querySelectorAll('a.siteTabBtn[href]').forEach(a => {
+       const base = a.getAttribute('href').split('?')[0];
+       a.setAttribute('href', `${base}?reporter=${code}`);
+     });
+   }
+   updateTabLinksForReporter();
+
+   try {
+     const fromUrl = new URLSearchParams(location.search).get('reporter');
+     const stored = fromUrl || localStorage.getItem('reporterCountry');
+     if (stored && stored !== currentReporter && REPORTERS.some(r => r.code === stored)){
+       reporterSelect.value = stored;
+       switchReporter(stored);
+     }
+   } catch (e) {
+     // localStorage unavailable -- the ?reporter= URL param still works.
+   }
+
+   reporterSelect.addEventListener('change', () => switchReporter(reporterSelect.value));
+
+   function switchReporter(code){
+     // Update the tab links to the target country right away -- see
+     // index.template.html's identical block for the full reasoning
+     // (otherwise a fast click-through right after picking a not-yet-cached
+     // country would still carry the OLD ?reporter= value).
+     updateTabLinksForReporter(code);
+     pendingReporter = code;
+     if (code === 'AT'){
+       applyReporterData('AT', austriaData);
+       return;
+     }
+     if (window.REPORTER_DATA[code]){
+       applyReporterData(code, window.REPORTER_DATA[code]);
+       return;
+     }
+
+     const script = document.createElement('script');
+     script.src = `data/monthly/${code.toLowerCase()}.js`;
+     script.onload = () => {
+       if (pendingReporter !== code) return;
+       applyReporterData(code, window.REPORTER_DATA[code]);
+     };
+     script.onerror = () => {
+       if (pendingReporter !== code) return;
+       alert('No data available yet for that country -- showing Austria instead.');
+       reporterSelect.value = 'AT';
+       switchReporter('AT');
+     };
+     document.head.appendChild(script);
+   }
+
+   function applyReporterData(code, data){
+     currentReporter = code;
+     partnersByYear = data.partnersByYear;
+     monthlyByYear = data.monthlyByYear;
+     countriesGeoJson = data.geojson;
+     years = data.years;
+
+     // Deselect any pinned country -- it belonged to the previous
+     // reporter's map/bar list.
+     selectedCountryCode = null;
+
+     const name = (REPORTERS.find(r => r.code === code) || {}).name || code;
+     reporterNameInTitle.textContent = name;
+     reporterNameInFooter.textContent = name;
+
+     try { localStorage.setItem('reporterCountry', code); } catch (e) { /* see above */ }
+     updateTabLinksForReporter();
+
+     onFilterChanged();
+   }
+</script>
+</body>
+</html>

@@ -1,0 +1,674 @@
+<!--
+  Template, not the live page -- see scripts/build_map.py, which reads this
+  file, replaces the __ALL_CAPS__ tokens below with real data, and writes
+  the result out as map.html. Re-run that script after the data changes;
+  editing map.html by hand would just get overwritten next time it runs.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+   <meta charset="utf-8" />
+   <meta name="viewport" content="width=device-width,initial-scale=1" />
+   <title>The Marker – Destinations for Austrian Cattle Exports</title>
+
+   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+   <style>
+     :root{
+       --pink:#E64980;
+       --turq:#6FB2A5;
+       --blue:#31688F;
+       --purple:#6D3D83;
+       --black:#010200;
+       --offwhite:#F0EEEF;
+
+       --panel: rgba(255,255,255,.04);
+       --border: rgba(240,238,239,.16);
+       --text: rgba(240,238,239,.92);
+       --muted: rgba(240,238,239,.68);
+       --grid: rgba(240,238,239,.12);
+     }
+     *{ box-sizing:border-box; }
+     body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--black); color:var(--text); }
+     .wrap{ max-width:1320px; margin:0 auto; padding:22px 18px 28px; }
+
+     /* Site-wide tab bar -- navigates between the six standalone pages
+        (a normal full-page link per tab, not a JS view-switcher). Sits
+        above the title; its own bottom border is the horizontal rule
+        that used to belong to .header. */
+     .siteTabs{ display:flex; gap:4px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+     .siteTabBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       text-decoration:none; display:inline-block;
+       background:transparent; border:none; border-bottom:2px solid transparent;
+       padding:9px 14px; cursor:pointer; margin-bottom:-1px;
+     }
+     .siteTabBtn:hover{ color:var(--text); }
+     .siteTabBtn.active{ color:var(--turq); border-bottom-color:var(--turq); cursor:default; }
+     /* Mirror Statistics is an internal/dev view, not a finished dashboard --
+        muted + italic by default, purple (not the usual turquoise) when
+        active or hovered, so it visually reads as "different" from the
+        other five tabs. */
+     .siteTabBtnDev{ color:rgba(240,238,239,.42); font-style:italic; }
+     .siteTabBtnDev:hover{ color:var(--purple); }
+     .siteTabBtnDev.active{ color:var(--purple); border-bottom-color:var(--purple); }
+
+     .header{ padding-top:14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+     h1{ margin:0; font-size:30px; line-height:1.1; letter-spacing:-0.02em; }
+
+     /* Reporter picker -- which country's own declarations this whole
+        page shows. See index.template.html for the identical pattern. */
+     .headerControls{ display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+     .reporterPicker{ display:flex; flex-direction:column; gap:4px; }
+     .reporterPicker label{ font-size:12px; color:var(--muted); }
+     .reporterPicker select{
+       font: inherit; font-size:14px; color:var(--text);
+       background:#0b0c0f; border:1px solid var(--border); padding:8px 10px; min-width:170px;
+     }
+
+     /* Unit toggle -- see index.template.html's identical block for the
+        full reasoning. */
+     .unitToggle{ display:flex; flex-direction:column; gap:4px; }
+     .unitToggle .toggleLabel{ font-size:12px; color:var(--muted); }
+     .unitToggleGroup{ display:inline-flex; border:1px solid var(--border); background:#0b0c0f; }
+     .unitToggleBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       background:transparent; border:none; padding:9px 14px; cursor:pointer;
+     }
+     .unitToggleBtn:hover{ color:var(--text); }
+     .unitToggleBtn.active{ background:var(--turq); color:#07140f; cursor:default; }
+     .footer{ margin-top:24px; padding-top:14px; border-top:1px solid var(--border); color:var(--muted); max-width:85ch; font-size:12.5px; line-height:1.5; }
+     .footer p{ margin:0 0 6px; }
+     .footer p:last-child{ margin-bottom:0; }
+     .footer strong{ color:rgba(240,238,239,.85); font-weight:600; }
+     .notes{ margin-top:10px; }
+     .notes summary{ font-size:12px; color:var(--turq); cursor:pointer; }
+     .notes ul{ margin:8px 0 0; padding-left:18px; }
+     .notes li{ margin-bottom:4px; }
+
+     /* ====== Layout: main content + right-hand filter sidebar ====== */
+     .layout{ display:flex; align-items:flex-start; gap:24px; }
+     .main{ flex:1; min-width:0; }
+     .sidebar{ width:300px; flex-shrink:0; position:sticky; top:18px; }
+     @media (max-width:900px){
+       .layout{ flex-direction:column; }
+       .sidebar{ width:100%; position:static; order:2; }
+     }
+
+     .panel{ margin-top:16px; border:1px solid var(--border); background:var(--panel); padding:14px 14px 10px; }
+     .meta{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; font-size:12.5px; color:rgba(240,238,239,.72); }
+     .meta strong{ color:rgba(240,238,239,.92); font-weight:600; }
+     .panelTitle{ margin:0 0 4px; font-size:16px; font-weight:600; color:rgba(240,238,239,.92); }
+
+     .controls{ margin-top:16px; border:1px solid var(--border); background:var(--panel); padding:12px 16px; display:flex; gap:14px; align-items:center; }
+     .controls label{ color:var(--muted); font-size:13px; white-space:nowrap; }
+     .controls output{ color:var(--text); font-weight:600; font-size:15px; min-width:3.5ch; text-align:right; }
+     input[type=range]{ flex:1; accent-color: var(--turq); }
+
+     #map{ width:100%; height:600px; background: var(--black); }
+     @media (max-width:760px){ h1{font-size:24px;} #map{height:420px;} }
+
+     /* Leaflet chrome, restyled to fit the dark theme */
+     .leaflet-control-zoom a{ background: rgba(0,0,0,.55); color: var(--offwhite); border: 1px solid rgba(240,238,239,.18); }
+     /* Leaflet's own CSS sets the background via the more specific
+        ".leaflet-container .leaflet-control-attribution" selector, which
+        beats a plain ".leaflet-control-attribution" rule regardless of
+        load order -- matching that selector here is what actually lets
+        this override the default white bar. Kept small and low-contrast
+        (required attribution text, but not meant to draw the eye). */
+     .leaflet-container .leaflet-control-attribution{ background: rgba(1,2,0,.5); }
+     .leaflet-control-attribution{ color: rgba(240,238,239,.55); font-size:10px; padding:1px 6px; }
+     .leaflet-control-attribution a{ color: rgba(240,238,239,.7); }
+     .leaflet-tooltip{ background: #0b0c0f; color: var(--offwhite); border: 1px solid rgba(240,238,239,.18); border-radius: 0; }
+     .leaflet-tooltip-top:before{ border-top-color: #0b0c0f; }
+
+     .mapLegend{ background: rgba(1,2,0,.85); border: 1px solid rgba(240,238,239,.18); padding: 8px 10px; font-size: 12px; color: var(--offwhite); line-height: 1.6; }
+     .mapLegend .row{ display:flex; align-items:center; gap:6px; }
+     .mapLegend .swatch{ width:12px; height:12px; display:inline-block; flex-shrink:0; }
+
+     /* ====== Filter panel (category + geography) -- stacked vertically
+        to fit the narrower sidebar column ====== */
+     .filterPanel{ border:1px solid var(--border); background:var(--panel); padding:14px 16px; }
+     .filterPanel h2{ margin:0 0 10px; font-size:13px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:rgba(240,238,239,.70); }
+     .filterRow{ display:flex; flex-direction:column; gap:20px; }
+
+     .geoFilter{ display:flex; flex-direction:column; gap:8px; font-size:13.5px; }
+     .geoFilter label{ display:flex; align-items:center; gap:5px; cursor:pointer; }
+
+     .categoryFilter{ display:flex; flex-direction:column; gap:16px; }
+     .filterGroup > label,
+     .groupLabel{ font-size:13.5px; font-weight:600; display:flex; align-items:center; gap:6px; cursor:pointer; }
+     .filterSubList{ margin:6px 0 0 20px; display:flex; flex-direction:column; gap:6px; }
+     .filterLeaf label{ font-size:13px; font-weight:400; display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--muted); }
+     .filterLeaf.filterSub label{ color:var(--text); }
+     .filterCodes{ margin:2px 0 0 20px; }
+     .filterCodes summary{ font-size:11.5px; color:rgba(240,238,239,.5); cursor:pointer; }
+     .filterCodes ul{ margin:4px 0 0; padding-left:16px; font-size:11.5px; color:rgba(240,238,239,.6); line-height:1.6; }
+     .filterCodes code{ color:var(--turq); }
+     input[type=checkbox], input[type=radio]{ accent-color: var(--turq); }
+   </style>
+</head>
+
+<body>
+<div class="wrap">
+   <div class="siteTabs">__SITE_TABS_HTML__</div>
+
+   <div class="header">
+     <div>
+       <h1>Destinations for <span id="reporterNameInTitle">Austria</span>'s Cattle Exports</h1>
+     </div>
+     <div class="headerControls">
+       <div class="unitToggle">
+         <span class="toggleLabel">Unit</span>
+         <div class="unitToggleGroup" id="unitToggle">
+           <button type="button" class="unitToggleBtn active" data-unit="animals">Animals</button>
+           <button type="button" class="unitToggleBtn" data-unit="eur">Trade value (€)</button>
+         </div>
+       </div>
+       <div class="reporterPicker">
+         <label for="reporterSelect">Reporting country</label>
+         <select id="reporterSelect"></select>
+       </div>
+     </div>
+   </div>
+
+   <div class="layout">
+     <div class="main">
+       <div class="panel">
+         <p class="panelTitle" id="mapTitle">Exports by destination country</p>
+         <div id="map"></div>
+       </div>
+
+       <div class="controls">
+         <label for="year">Year:</label>
+         <input type="range" id="year" min="0" max="0" step="1" value="0" />
+         <output id="yearOutput" for="year"></output>
+       </div>
+
+       <div class="footer">
+         <p>
+           Live cattle exports from <span id="reporterNameInFooter">Austria</span>, __YEAR_RANGE__.
+           Source: Eurostat Comext, dataset DS-045409.
+         </p>
+         <p>
+           <strong>Included:</strong> breeding cattle (pure-bred), slaughter cattle, other cattle (rearing/store).
+           <strong>Not included:</strong> buffalo.
+         </p>
+         __PROJECT_NOTES_HTML__
+       </div>
+     </div>
+
+     <aside class="sidebar">
+       <div class="filterPanel">
+         <h2>Filter</h2>
+         <div class="filterRow">
+           <div class="geoFilter" id="geoFilter">
+             <label><input type="radio" name="geo" value="all" checked> All countries</label>
+             <label><input type="radio" name="geo" value="eu"> EU only</label>
+             <label><input type="radio" name="geo" value="noneu"> Non-EU only</label>
+           </div>
+           <div class="categoryFilter" id="categoryFilter">__CATEGORY_FILTER_HTML__</div>
+         </div>
+       </div>
+     </aside>
+   </div>
+</div>
+
+<script>
+   // ====== Embedded data ======
+   // build_map.py replaced these placeholders with real GeoJSON/JSON when
+   // it built this page -- after that, the page needs no server at all,
+   // everything it needs lives right here in the code. Every country now
+   // carries (if trade data exists) values[year] as an object with a
+   // category breakdown, not a single number -- so the category filter
+   // can compute what's left over for whatever selection is active.
+   //
+   // "let", not "const": Austria's own data is what's baked in here at
+   // build time, but switchReporter() further down reassigns both of
+   // these wholesale when a different reporting country is picked.
+   let countriesGeoJson = __COUNTRIES_GEOJSON__;
+   let years = __YEARS_JSON__;
+   // {code, name} for every reporter this project has a pipeline for --
+   // populates the picker dropdown.
+   const REPORTERS = __REPORTERS_JSON__;
+   // {key, label, categories} for the five single-select category views --
+   // see scripts/product_categories.py's VIEWS for the full reasoning.
+   const VIEWS = __VIEWS_JSON__;
+   // Which reporter's own declarations are currently shown -- replaces
+   // the old baked-in "isExporter" property (which only ever marked
+   // Austria) everywhere this page needs to know "is this the country
+   // whose exports we're looking at" now that it can be any of them.
+   let currentReporter = 'AT';
+   // See index.template.html's identical declaration for the full
+   // reasoning -- tracks the most recently requested country so a
+   // late-arriving load for an earlier, superseded pick can't clobber it.
+   let pendingReporter = 'AT';
+   // Austria's data never needs re-fetching once the page has loaded --
+   // switching back to it just restores this snapshot, taken before
+   // anything above is ever reassigned. Key name matches the "geojson"
+   // key every other reporter's data file uses (see build_map.py's
+   // main()), so applyReporterData() below can read both the same way.
+   const austriaData = { geojson: countriesGeoJson, years };
+
+   // ====== Colours / styling ======
+   const css = getComputedStyle(document.documentElement);
+   const PINK = css.getPropertyValue('--pink').trim();
+   const TEXT = css.getPropertyValue('--muted').trim();
+   const fmt = new Intl.NumberFormat('en-GB');
+   // No decimal places -- these are large trade totals, where cents would
+   // just be visual noise. Same formatter as index.html's.
+   const fmtEur = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+
+   // A light-to-dark turquoise ramp, anchored on the same --turq used by
+   // the rest of the site (the middle step below is exactly --turq).
+   // Countries are bucketed into 5 groups by quantile (i.e. "top fifth",
+   // "next fifth", ...) rather than a straight linear scale, because a
+   // few countries (Türkiye, Italy) export vastly more than most others --
+   // a linear scale would leave nearly everything looking like the same
+   // pale color.
+   const RAMP = ['#DCEEEA', '#A9D4C9', '#6FB2A5', '#3F8577', '#204F45'];
+   const NO_DATA_COLOR = '#141414';
+
+   // Given this year's values (already sorted ascending) and how many
+   // buckets we want, returns the value at each bucket boundary -- e.g.
+   // for 5 buckets, the values at the 20th/40th/60th/80th percentiles.
+   function quantileBreaks(sortedValues, bucketCount){
+     const breaks = [];
+     for (let i = 1; i < bucketCount; i++){
+       const idx = Math.floor((sortedValues.length * i) / bucketCount);
+       breaks.push(sortedValues[Math.min(idx, sortedValues.length - 1)]);
+     }
+     return breaks;
+   }
+
+   function colorFor(value, breaks){
+     for (let i = 0; i < breaks.length; i++){
+       if (value <= breaks[i]) return RAMP[i];
+     }
+     return RAMP[RAMP.length - 1];
+   }
+
+   // ========================================================================
+   // Filter state (category + geography) -- same logic as index.html
+   // ========================================================================
+
+   let selectedCategories = new Set(VIEWS.find(v => v.key === 'all').categories);
+   let geoFilter = 'all';
+   // "animals" (head count) or "eur" (trade value) -- same idea as
+   // index.html's unitMode, reusing its "animals"/"eur" value strings so
+   // the two pages' toggle UIs stay interchangeable in spirit.
+   let unitMode = 'animals';
+
+   document.querySelectorAll('#unitToggle .unitToggleBtn').forEach(btn => {
+     btn.addEventListener('click', () => {
+       if (btn.classList.contains('active')) return;
+       unitMode = btn.dataset.unit;
+       document.querySelectorAll('#unitToggle .unitToggleBtn').forEach(b => b.classList.toggle('active', b === btn));
+       render();
+     });
+   });
+
+   document.querySelectorAll('#categoryFilter .viewRadio').forEach(radio => {
+     radio.addEventListener('change', () => {
+       recomputeCategories();
+       render();
+     });
+   });
+
+   document.querySelectorAll('#geoFilter input[name="geo"]').forEach(radio => {
+     radio.addEventListener('change', () => {
+       geoFilter = radio.value;
+       render();
+     });
+   });
+
+   function recomputeCategories(){
+     const checked = document.querySelector('#categoryFilter .viewRadio:checked');
+     const view = VIEWS.find(v => v.key === checked.value);
+     selectedCategories = new Set(view.categories);
+   }
+
+   function countryMatchesGeo(props){
+     if (geoFilter === 'all') return true;
+     return geoFilter === 'eu' ? props.isEU : !props.isEU;
+   }
+
+   // Sums only the currently-selected categories for one country/year. A
+   // country that's filtered out by geography returns undefined (treated
+   // the same as "no data" for coloring/tooltip purposes), so the geo and
+   // category filters combine with simple AND logic. Reads from
+   // props.valuesEur instead of props.values when the unit toggle is set
+   // to trade value -- same per-category shape either way, see
+   // build_map.py's build_choropleth_geojson().
+   function valueFor(props, year){
+     const values = unitMode === 'eur' ? props.valuesEur : props.values;
+     if (!values || !countryMatchesGeo(props)) return undefined;
+     const byCategory = values[year];
+     if (!byCategory) return undefined;
+     let sum = 0;
+     selectedCategories.forEach(cat => { sum += byCategory[cat] || 0; });
+     return sum > 0 ? sum : undefined;
+   }
+
+   // Formats a value for the tooltip/legend, honouring the current unit --
+   // plain "12,345 animals" or a proper "€12,345" currency string. Same
+   // reasoning as index.html's formatUnit/formatUnitShort.
+   function formatUnit(value){
+     return unitMode === 'eur' ? fmtEur.format(value) : `${fmt.format(value)} animals`;
+   }
+   function formatUnitShort(value){
+     return unitMode === 'eur' ? fmtEur.format(value) : fmt.format(value);
+   }
+
+   // ====== Map ======
+   // Centered on Europe/Central Asia, not the world's geographic center --
+   // that's where nearly all of AT's actual export destinations are, so a
+   // plain world view would leave most of the map empty.
+   const map = L.map('map', { zoomControl: true, worldCopyJump: true }).setView([42, 35], 3);
+
+   // Esri's free "Dark Gray Canvas" basemap -- no API key needed. Used to
+   // be CARTO's "dark_all" tiles, switched after CARTO started serving a
+   // watermarked "API KEY REQUIRED" placeholder image in place of real
+   // tiles for anonymous/free requests (confirmed live: the tile response
+   // itself still comes back HTTP 200, so this doesn't show up as a
+   // network error -- only as a visibly broken map). Esri's tile URL
+   // scheme is {z}/{y}/{x} (row before column), not the usual {z}/{x}/{y} --
+   // that's just this service's own convention, not a typo.
+   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+     maxZoom: 16,
+     attribution: 'Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, and the GIS community'
+   }).addTo(map);
+
+   const legend = L.control({ position: 'bottomright' });
+   legend.onAdd = function(){
+     this._div = L.DomUtil.create('div', 'mapLegend');
+     return this._div;
+   };
+   legend.addTo(map);
+
+   function legendHeading(){
+     const label = unitMode === 'eur' ? 'Exports (trade value)' : 'Exports (animals)';
+     return `<div style="margin-bottom:4px;"><strong>${label}</strong></div>` +
+       '<div style="margin-bottom:4px; font-size:11px; color:rgba(240,238,239,.5);">Same scale every year</div>';
+   }
+
+   function updateLegend(breaks){
+     if (!breaks.length){
+       legend._div.innerHTML = legendHeading() + '<div class="row">No data for this selection</div>';
+       return;
+     }
+     const labels = [`< ${formatUnitShort(breaks[0])}`];
+     for (let i = 0; i < breaks.length - 1; i++){
+       labels.push(`${formatUnitShort(breaks[i])} – ${formatUnitShort(breaks[i + 1])}`);
+     }
+     labels.push(`> ${formatUnitShort(breaks[breaks.length - 1])}`);
+
+     legend._div.innerHTML =
+       legendHeading() +
+       RAMP.map((color, i) =>
+         `<div class="row"><span class="swatch" style="background:${color}"></span>${labels[i]}</div>`
+       ).join('') +
+       `<div class="row"><span class="swatch" style="background:${NO_DATA_COLOR}"></span>no data</div>`;
+   }
+
+   let geoLayer = null;
+   const yearSlider = document.getElementById('year');
+   const yearOutput = document.getElementById('yearOutput');
+   const mapTitle = document.getElementById('mapTitle');
+
+   // Which country (by ISO2 code) is currently clicked/pinned -- null
+   // means none. Kept alongside the breaks from the most recent render()
+   // so a click can restyle the map without waiting for the next redraw.
+   // Same mechanism as monthly.html's country pinning, ported here so
+   // clicking behaves the same way on every page instead of this map
+   // being hover-only while Monthly's is click-to-pin.
+   let selectedCountryCode = null;
+   let currentBreaks = [];
+
+   function styleFor(feature, breaks){
+     const props = feature.properties;
+     const year = years[yearSlider.value];
+     const value = valueFor(props, year);
+
+     const base = {
+       weight: 1,
+       color: 'rgba(240,238,239,.25)',
+       fillOpacity: 0.9,
+       fillColor: value === undefined ? NO_DATA_COLOR : colorFor(value, breaks)
+     };
+
+     // The current reporter itself: highlighted with a thicker pink
+     // border so it reads as "this is where the exports come from,"
+     // separate from the value-based fill scale used for destination
+     // countries. Compared against currentReporter rather than a baked
+     // "isExporter" property, since which country this is changes
+     // whenever a different reporter is picked.
+     if (props.code === currentReporter){
+       base.color = PINK;
+       base.weight = 3;
+       base.fillColor = NO_DATA_COLOR;
+     }
+
+     return base;
+   }
+
+   function tooltipFor(feature){
+     const props = feature.properties;
+     if (props.code === currentReporter) return `<b>${props.name}</b><br>Reporting country`;
+
+     const year = years[yearSlider.value];
+     if (!countryMatchesGeo(props)) return `<b>${props.name}</b><br>Not in the current filter`;
+
+     const value = valueFor(props, year);
+     const line = value === undefined ? 'No exports (in this selection)' : formatUnit(value);
+     return `<b>${props.name}</b><br>${line}`;
+   }
+
+   // Pools every year's values together (for whatever category/geo filter
+   // is active) so the break points stay the same no matter which year is
+   // selected -- a country getting a darker color when you move the year
+   // slider means its own export volume actually grew, not just that its
+   // rank among that one year's countries shifted. Recomputed on every
+   // render() call (cheap: at most a few hundred numbers), so it always
+   // reflects the current filter even though the year itself doesn't
+   // affect it.
+   function pooledValuesAcrossYears(){
+     const values = [];
+     countriesGeoJson.features.forEach(f => {
+       years.forEach(year => {
+         const v = valueFor(f.properties, year);
+         if (v !== undefined) values.push(v);
+       });
+     });
+     return values.sort((a, b) => a - b);
+   }
+
+   // ARCHIVED -- the previous approach: breaks were recomputed from just
+   // the selected year's values, so "darkest color" always meant "this
+   // year's top fifth" but wasn't comparable across years (the same shade
+   // could mean very different absolute volumes in a low- vs high-export
+   // year). Kept here, unused, in case we want to switch back -- swap the
+   // pooledValuesAcrossYears() call below for valuesForSingleYear(year).
+   function valuesForSingleYear(year){
+     return countriesGeoJson.features
+       .map(f => valueFor(f.properties, year))
+       .filter(v => v !== undefined)
+       .sort((a, b) => a - b);
+   }
+
+   function render(){
+     const year = years[yearSlider.value];
+     yearOutput.textContent = year;
+     mapTitle.textContent = `Exports by destination country, ${year}`;
+
+     const breaks = quantileBreaks(pooledValuesAcrossYears(), RAMP.length);
+     updateLegend(breaks);
+     currentBreaks = breaks;
+
+     if (geoLayer) geoLayer.remove();
+     geoLayer = L.geoJSON(countriesGeoJson, {
+       style: (feature) => styleFor(feature, breaks),
+       onEachFeature: (feature, layer) => {
+         const props = feature.properties;
+         layer.bindTooltip(tooltipFor(feature), { sticky: true, opacity: 0.95 });
+         layer.on('mouseover', () => {
+           if (props.code === selectedCountryCode) return;
+           layer.setStyle({ weight: props.code === currentReporter ? 4 : 2 });
+         });
+         layer.on('mouseout', () => {
+           if (props.code === selectedCountryCode) return;
+           layer.setStyle(styleFor(feature, breaks));
+         });
+         // The current reporter itself isn't a pin-able destination --
+         // clicking it would have nothing meaningful to pin open.
+         if (props.code !== currentReporter){
+           layer.on('click', () => selectCountry(props.code));
+         }
+       }
+     }).addTo(map);
+
+     applySelectionToMap();
+   }
+
+   // ========================================================================
+   // Country pinning -- click a country to keep its tooltip open (instead
+   // of only showing on hover) and give it a highlighted border, so it can
+   // be read or screenshotted without having to keep the mouse still.
+   // Clicking the same country again un-pins it.
+   // ========================================================================
+
+   function selectCountry(code){
+     selectedCountryCode = (selectedCountryCode === code) ? null : code;
+     applySelectionToMap();
+   }
+
+   function applySelectionToMap(){
+     if (!geoLayer) return;
+     geoLayer.eachLayer(layer => {
+       const props = layer.feature.properties;
+       if (props.code === currentReporter) return;
+       if (props.code === selectedCountryCode){
+         layer.setStyle({ weight: 3, color: PINK });
+         layer.bringToFront();
+         layer.openTooltip();
+       } else {
+         layer.setStyle(styleFor(layer.feature, currentBreaks));
+         layer.closeTooltip();
+       }
+     });
+   }
+
+   yearSlider.max = years.length - 1;
+   yearSlider.value = years.length - 1;
+   yearSlider.addEventListener('input', render);
+   render();
+
+   // ========================================================================
+   // Reporter picker -- switch which country's own trade declarations the
+   // whole page shows. See index.template.html's identical section for
+   // the full reasoning (in short: a <script src> tag, not fetch(), since
+   // this page needs to keep working when opened directly as a local
+   // file, and fetch() of a relative path is blocked under file://).
+   // ========================================================================
+
+   window.REPORTER_DATA = window.REPORTER_DATA || {};
+   const reporterSelect = document.getElementById('reporterSelect');
+   const reporterNameInTitle = document.getElementById('reporterNameInTitle');
+   const reporterNameInFooter = document.getElementById('reporterNameInFooter');
+
+   REPORTERS.forEach(r => {
+     const opt = document.createElement('option');
+     opt.value = r.code;
+     opt.textContent = r.name;
+     reporterSelect.appendChild(opt);
+   });
+   reporterSelect.value = currentReporter;
+
+   // See index.template.html's identical block for the full reasoning --
+   // the URL's own ?reporter= param (rewritten onto every tab link below)
+   // is the primary persistence mechanism since it works in every browser;
+   // localStorage is a Chromium-only fallback (Firefox isolates each
+   // file:// page into its own origin, so it can't share localStorage the
+   // way Chromium/Edge do).
+   function updateTabLinksForReporter(code = currentReporter){
+     // Always include ?reporter=, even for Austria -- see
+     // index.template.html's identical block for the full reasoning
+     // (otherwise a destination page with no URL instruction falls back
+     // to its own possibly-stale localStorage).
+     document.querySelectorAll('a.siteTabBtn[href]').forEach(a => {
+       const base = a.getAttribute('href').split('?')[0];
+       a.setAttribute('href', `${base}?reporter=${code}`);
+     });
+   }
+   updateTabLinksForReporter();
+
+   try {
+     const fromUrl = new URLSearchParams(location.search).get('reporter');
+     const stored = fromUrl || localStorage.getItem('reporterCountry');
+     if (stored && stored !== currentReporter && REPORTERS.some(r => r.code === stored)){
+       reporterSelect.value = stored;
+       switchReporter(stored);
+     }
+   } catch (e) {
+     // localStorage unavailable -- the ?reporter= URL param still works.
+   }
+
+   reporterSelect.addEventListener('change', () => switchReporter(reporterSelect.value));
+
+   function switchReporter(code){
+     // Update the tab links to the target country right away -- see
+     // index.template.html's identical block for the full reasoning
+     // (otherwise a fast click-through right after picking a not-yet-cached
+     // country would still carry the OLD ?reporter= value).
+     updateTabLinksForReporter(code);
+     pendingReporter = code;
+     if (code === 'AT'){
+       applyReporterData('AT', austriaData);
+       return;
+     }
+     if (window.REPORTER_DATA[code]){
+       applyReporterData(code, window.REPORTER_DATA[code]);
+       return;
+     }
+
+     const script = document.createElement('script');
+     script.src = `data/map/${code.toLowerCase()}.js`;
+     script.onload = () => {
+       if (pendingReporter !== code) return;
+       applyReporterData(code, window.REPORTER_DATA[code]);
+     };
+     script.onerror = () => {
+       if (pendingReporter !== code) return;
+       alert('No data available yet for that country -- showing Austria instead.');
+       reporterSelect.value = 'AT';
+       switchReporter('AT');
+     };
+     document.head.appendChild(script);
+   }
+
+   function applyReporterData(code, data){
+     currentReporter = code;
+     countriesGeoJson = data.geojson;
+     years = data.years;
+
+     // Deselect any pinned country -- it belongs to the previous
+     // reporter's map and won't generally exist as a meaningful
+     // selection on the new one.
+     selectedCountryCode = null;
+
+     yearSlider.max = years.length - 1;
+     yearSlider.value = years.length - 1;
+
+     const name = (REPORTERS.find(r => r.code === code) || {}).name || code;
+     reporterNameInTitle.textContent = name;
+     reporterNameInFooter.textContent = name;
+
+     try { localStorage.setItem('reporterCountry', code); } catch (e) { /* see above */ }
+     updateTabLinksForReporter();
+
+     render();
+   }
+</script>
+</body>
+</html>

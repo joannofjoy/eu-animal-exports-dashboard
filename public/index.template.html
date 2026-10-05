@@ -1,0 +1,628 @@
+<!--
+  This is a TEMPLATE, not the live page. It's never opened in a browser
+  directly -- scripts/build_dashboard.py reads this file, replaces the
+  __ALL_CAPS__ placeholder tokens below with real numbers (computed from
+  the CSVs in data/processed/), and writes the result out as index.html,
+  which is the actual static page. Re-run that script any time the
+  underlying data changes; editing index.html by hand would just get
+  overwritten next time it runs.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+   <meta charset="utf-8" />
+   <meta name="viewport" content="width=device-width,initial-scale=1" />
+   <title>The Marker – Austrian Live Cattle Exports</title>
+   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+
+   <style>
+     :root{
+       --pink:#E64980;
+       --turq:#6FB2A5;
+       --blue:#31688F;
+       --purple:#6D3D83;
+       --black:#010200;
+       --offwhite:#F0EEEF;
+
+       --panel: rgba(255,255,255,.04);
+       --border: rgba(240,238,239,.16);
+       --text: rgba(240,238,239,.92);
+       --muted: rgba(240,238,239,.68);
+       --grid: rgba(240,238,239,.12);
+     }
+     *{ box-sizing:border-box; }
+     body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--black); color:var(--text); }
+     .wrap{ max-width:1320px; margin:0 auto; padding:22px 18px 28px; }
+
+     /* Site-wide tab bar -- navigates between the six standalone pages
+        (a normal full-page link per tab, not a JS view-switcher). Sits
+        above the title; its own bottom border is the horizontal rule
+        that used to belong to .header. */
+     .siteTabs{ display:flex; gap:4px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+     .siteTabBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       text-decoration:none; display:inline-block;
+       background:transparent; border:none; border-bottom:2px solid transparent;
+       padding:9px 14px; cursor:pointer; margin-bottom:-1px;
+     }
+     .siteTabBtn:hover{ color:var(--text); }
+     .siteTabBtn.active{ color:var(--turq); border-bottom-color:var(--turq); cursor:default; }
+     /* Mirror Statistics is an internal/dev view, not a finished dashboard --
+        muted + italic by default, purple (not the usual turquoise) when
+        active or hovered, so it visually reads as "different" from the
+        other five tabs. */
+     .siteTabBtnDev{ color:rgba(240,238,239,.42); font-style:italic; }
+     .siteTabBtnDev:hover{ color:var(--purple); }
+     .siteTabBtnDev.active{ color:var(--purple); border-bottom-color:var(--purple); }
+
+     .header{ padding-top:14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+     h1{ margin:0; font-size:30px; line-height:1.1; letter-spacing:-0.02em; }
+
+     /* Reporter picker -- which country's own declarations this whole
+        page shows, as opposed to the geo/category filters in the sidebar,
+        which only narrow down *within* one reporter's data. Sits next to
+        the title rather than in the sidebar since it changes the page's
+        entire subject, not just what's shown of it. */
+     .headerControls{ display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+     .reporterPicker{ display:flex; flex-direction:column; gap:4px; }
+     .reporterPicker label{ font-size:12px; color:var(--muted); }
+     .reporterPicker select{
+       font: inherit; font-size:14px; color:var(--text);
+       background:#0b0c0f; border:1px solid var(--border); padding:8px 10px; min-width:170px;
+     }
+
+     /* Unit toggle (Animals / Trade value) -- a real two-segment switch,
+        not radio buttons buried in the sidebar filters, since it changes
+        how every number on the page is read -- the same importance tier
+        as which reporter is selected, so it sits right next to that
+        picker instead of down with the geo/category filters. */
+     .unitToggle{ display:flex; flex-direction:column; gap:4px; }
+     .unitToggle .toggleLabel{ font-size:12px; color:var(--muted); }
+     .unitToggleGroup{ display:inline-flex; border:1px solid var(--border); background:#0b0c0f; }
+     .unitToggleBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       background:transparent; border:none; padding:9px 14px; cursor:pointer;
+     }
+     .unitToggleBtn:hover{ color:var(--text); }
+     .unitToggleBtn.active{ background:var(--turq); color:#07140f; cursor:default; }
+     .footer{ margin-top:24px; padding-top:14px; border-top:1px solid var(--border); color:var(--muted); max-width:85ch; font-size:12.5px; line-height:1.5; }
+     .footer p{ margin:0 0 6px; }
+     .footer p:last-child{ margin-bottom:0; }
+     .footer strong{ color:rgba(240,238,239,.85); font-weight:600; }
+     .notes{ margin-top:10px; }
+     .notes summary{ font-size:12px; color:var(--turq); cursor:pointer; }
+     .notes ul{ margin:8px 0 0; padding-left:18px; }
+     .notes li{ margin-bottom:4px; }
+
+     .panel{ margin-top:16px; border:1px solid var(--border); background:var(--panel); padding:14px 14px 10px; }
+     .meta{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; font-size:12.5px; color:rgba(240,238,239,.72); }
+     .meta strong{ color:rgba(240,238,239,.92); font-weight:600; }
+     .panelTitle{ margin:0 0 4px; font-size:16px; font-weight:600; color:rgba(240,238,239,.92); }
+
+     canvas{ width:100% !important; display:block; }
+     #yearlyChart{ height:420px !important; }
+     #partnersChart{ height:380px !important; }
+
+     /* ====== Layout: main content + right-hand filter sidebar ====== */
+     .layout{ display:flex; align-items:flex-start; gap:24px; }
+     .main{ flex:1; min-width:0; }
+     .sidebar{ width:300px; flex-shrink:0; position:sticky; top:18px; }
+
+     /* ====== Filter panel (category + geography) -- stacked vertically
+        to fit the narrower sidebar column ====== */
+     .filterPanel{ border:1px solid var(--border); background:var(--panel); padding:14px 16px; }
+     .filterPanel h2{ margin:0 0 10px; font-size:13px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:rgba(240,238,239,.70); }
+     .filterRow{ display:flex; flex-direction:column; gap:20px; }
+
+     .geoFilter{ display:flex; flex-direction:column; gap:8px; font-size:13.5px; }
+     .geoFilter label{ display:flex; align-items:center; gap:5px; cursor:pointer; }
+
+     .categoryFilter{ display:flex; flex-direction:column; gap:16px; }
+     .filterGroup > label,
+     .groupLabel{ font-size:13.5px; font-weight:600; display:flex; align-items:center; gap:6px; cursor:pointer; }
+     .filterSubList{ margin:6px 0 0 20px; display:flex; flex-direction:column; gap:6px; }
+     .filterLeaf label{ font-size:13px; font-weight:400; display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--muted); }
+     .filterLeaf.filterSub label{ color:var(--text); }
+     .filterCodes{ margin:2px 0 0 20px; }
+     .filterCodes summary{ font-size:11.5px; color:rgba(240,238,239,.5); cursor:pointer; }
+     .filterCodes ul{ margin:4px 0 0; padding-left:16px; font-size:11.5px; color:rgba(240,238,239,.6); line-height:1.6; }
+     .filterCodes code{ color:var(--turq); }
+     input[type=checkbox], input[type=radio]{ accent-color: var(--turq); }
+
+     @media (max-width:900px){
+       .layout{ flex-direction:column; }
+       .sidebar{ width:100%; position:static; order:2; }
+     }
+     @media (max-width:760px){ h1{font-size:24px;} #yearlyChart{height:340px !important;} #partnersChart{height:340px !important;} }
+   </style>
+</head>
+
+<body>
+<div class="wrap">
+   <div class="siteTabs">__SITE_TABS_HTML__</div>
+
+   <div class="header">
+     <div>
+       <h1>Live Cattle Exports from <span id="reporterNameInTitle">Austria</span></h1>
+     </div>
+     <div class="headerControls">
+       <div class="unitToggle">
+         <span class="toggleLabel">Unit</span>
+         <div class="unitToggleGroup" id="unitToggle">
+           <button type="button" class="unitToggleBtn active" data-unit="animals">Animals</button>
+           <button type="button" class="unitToggleBtn" data-unit="eur">Trade value (€)</button>
+         </div>
+       </div>
+       <div class="reporterPicker">
+         <label for="reporterSelect">Reporting country</label>
+         <select id="reporterSelect"></select>
+       </div>
+     </div>
+   </div>
+
+   <div class="layout">
+     <div class="main">
+       <div class="panel">
+         <p class="panelTitle">Yearly exports, __YEAR_RANGE__</p>
+         <canvas id="yearlyChart"></canvas>
+       </div>
+
+       <div class="panel">
+         <div class="meta">
+           <div><strong>View:</strong> top 10 destination countries for one year -- click a bar above to change the year.</div>
+         </div>
+         <p class="panelTitle" id="partnersTitle">Top destination countries</p>
+         <canvas id="partnersChart"></canvas>
+       </div>
+
+       <div class="footer">
+         <p>
+           Live cattle exports from <span id="reporterNameInFooter">Austria</span>, __YEAR_RANGE__.
+           Source: Eurostat Comext, dataset DS-045409.
+         </p>
+         <p>
+           <strong>Included:</strong> breeding cattle (pure-bred), slaughter cattle, other cattle (rearing/store).
+           <strong>Not included:</strong> buffalo.
+         </p>
+         __PROJECT_NOTES_HTML__
+       </div>
+     </div>
+
+     <aside class="sidebar">
+       <div class="filterPanel">
+         <h2>Filter</h2>
+         <div class="filterRow">
+           <div class="geoFilter" id="geoFilter">
+             <label><input type="radio" name="geo" value="all" checked> All countries</label>
+             <label><input type="radio" name="geo" value="eu"> EU only</label>
+             <label><input type="radio" name="geo" value="noneu"> Non-EU only</label>
+           </div>
+           <div class="categoryFilter" id="categoryFilter">__CATEGORY_FILTER_HTML__</div>
+         </div>
+       </div>
+     </aside>
+   </div>
+</div>
+
+<script>
+   // ====== Embedded data ======
+   // build_dashboard.py replaced these placeholders with real JSON when
+   // it built this page (see data/processed/*.csv for the source).
+   // partnersByYear holds, for every year, every partner with a category
+   // breakdown (byCategory) and EU membership (isEU) -- both charts AND
+   // both filters are computed from this, there's no separate "top 10"
+   // list that would only be correct for one fixed category selection.
+   //
+   // "let", not "const": Austria's own data is what's baked in here at
+   // build time, but switchReporter() further down reassigns both of
+   // these wholesale when a different reporting country is picked --
+   // every function below reads partnersByYear/years fresh each time it's
+   // called, so reassigning them here is all that's needed to make the
+   // rest of the page follow along.
+   let partnersByYear = __PARTNERS_BY_YEAR_JSON__;
+   let years = __YEARS_JSON__;
+   // {code, name} for every reporter this project has a pipeline for
+   // (see scripts/countries.py's REPORTERS) -- populates the dropdown.
+   const REPORTERS = __REPORTERS_JSON__;
+   // {key, label, categories} for the five single-select category views --
+   // see scripts/product_categories.py's VIEWS for the full reasoning.
+   const VIEWS = __VIEWS_JSON__;
+   // Austria's data never needs re-fetching once the page has loaded --
+   // switching back to it just restores this snapshot, taken before
+   // anything above is ever reassigned.
+   const austriaData = { partnersByYear, years };
+
+   // ====== Colours / styling ======
+   const css = getComputedStyle(document.documentElement);
+   const TURQ = css.getPropertyValue('--turq').trim();
+   const GRID = css.getPropertyValue('--grid').trim();
+   const TEXT = css.getPropertyValue('--muted').trim();
+
+   const fmt = new Intl.NumberFormat('en-GB');
+   // No decimal places -- these are large trade totals (thousands to
+   // millions of euros), where cents would just be visual noise.
+   const fmtEur = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+
+   function rgba(hex, a){
+     const h = hex.replace('#','');
+     const r = parseInt(h.slice(0,2),16);
+     const g = parseInt(h.slice(2,4),16);
+     const b = parseInt(h.slice(4,6),16);
+     return `rgba(${r},${g},${b},${a})`;
+   }
+
+   // ========================================================================
+   // Filter state
+   // ========================================================================
+
+   // Which category view (the five radios under #categoryFilter -- All /
+   // Calves / For slaughter / For breeding / For production-rearing --
+   // see product_categories.py's VIEWS), which geography (all/EU/non-EU),
+   // and which unit ("animals" -- head count, or "eur" -- trade value) are
+   // currently selected. Every chart re-reads all three on every change.
+   let selectedCategories = new Set(VIEWS.find(v => v.key === 'all').categories);
+   let geoFilter = 'all';
+   let unitMode = 'animals';
+
+   document.querySelectorAll('#unitToggle .unitToggleBtn').forEach(btn => {
+     btn.addEventListener('click', () => {
+       if (btn.classList.contains('active')) return;
+       unitMode = btn.dataset.unit;
+       document.querySelectorAll('#unitToggle .unitToggleBtn').forEach(b => b.classList.toggle('active', b === btn));
+       renderAll();
+     });
+   });
+
+   document.querySelectorAll('#categoryFilter .viewRadio').forEach(radio => {
+     radio.addEventListener('change', () => {
+       recomputeCategories();
+       renderAll();
+     });
+   });
+
+   document.querySelectorAll('#geoFilter input[name="geo"]').forEach(radio => {
+     radio.addEventListener('change', () => {
+       geoFilter = radio.value;
+       renderAll();
+     });
+   });
+
+   function recomputeCategories(){
+     const checked = document.querySelector('#categoryFilter .viewRadio:checked');
+     const view = VIEWS.find(v => v.key === checked.value);
+     selectedCategories = new Set(view.categories);
+   }
+
+   function partnerMatchesGeo(partner){
+     if (geoFilter === 'all') return true;
+     return geoFilter === 'eu' ? partner.isEU : !partner.isEU;
+   }
+
+   // Sums only the currently-selected categories for one partner, reading
+   // from byCategory (head count) or byCategoryValueEur (trade value)
+   // depending on unitMode -- everything downstream (both charts, the
+   // tooltip, the axis) just calls this and doesn't need to know which
+   // unit is active.
+   function quantityForPartner(partner){
+     const source = unitMode === 'eur' ? partner.byCategoryValueEur : partner.byCategory;
+     let sum = 0;
+     selectedCategories.forEach(cat => { sum += (source && source[cat]) || 0; });
+     return sum;
+   }
+
+   // Formats a number for display, honouring the current unit -- plain
+   // "12,345 animals" or a proper "€12,345" currency string.
+   function formatUnit(value){
+     return unitMode === 'eur' ? fmtEur.format(value) : `${fmt.format(value)} animals`;
+   }
+
+   // Same number, but without the "animals" suffix -- for axis tick
+   // labels, which already sit next to an axis title saying what they are.
+   function formatUnitShort(value){
+     return unitMode === 'eur' ? fmtEur.format(value) : fmt.format(value);
+   }
+
+   function axisTitle(){
+     return unitMode === 'eur' ? 'Trade value (€)' : 'Number of animals';
+   }
+
+   function datasetLabel(){
+     return unitMode === 'eur' ? 'Export value' : 'Animals exported';
+   }
+
+   function totalForYear(year){
+     return (partnersByYear[year] || [])
+       .filter(partnerMatchesGeo)
+       .reduce((sum, p) => sum + quantityForPartner(p), 0);
+   }
+
+   function topPartnersForYear(year, limit = 10){
+     return (partnersByYear[year] || [])
+       .filter(partnerMatchesGeo)
+       .map(p => ({ name: p.name, quantity: quantityForPartner(p) }))
+       .filter(p => p.quantity > 0)
+       .sort((a, b) => b.quantity - a.quantity)
+       .slice(0, limit);
+   }
+
+   // ====== Chart 1: yearly exports (click a bar to select the year) ======
+   // "let" instead of "const" because this value changes as soon as
+   // another bar is clicked (see selectYear() further below).
+   let selectedYear = years[years.length - 1];
+
+   const partnersTitle = document.getElementById('partnersTitle');
+   partnersTitle.textContent = `Top destination countries, ${selectedYear}`;
+
+   // Returns a colour for every year: full opacity for the currently
+   // selected year, dimmed (35%) for all others.
+   function colorsForSelection(){
+     return years.map(y => y === selectedYear ? TURQ : rgba(TURQ, 0.35));
+   }
+
+   const yearlyCtx = document.getElementById('yearlyChart');
+   const yearlyChart = new Chart(yearlyCtx, {
+     type: 'bar',
+     data: {
+       labels: years,
+       datasets: [
+         {
+           label: datasetLabel(),
+           data: years.map(totalForYear),
+           backgroundColor: colorsForSelection(),
+           hoverBackgroundColor: rgba(TURQ, 0.95),
+           borderRadius: 0,
+           borderSkipped: false,
+           barPercentage: 0.85,
+           categoryPercentage: 0.72
+         }
+       ]
+     },
+     options: {
+       responsive: true,
+       maintainAspectRatio: false,
+       interaction: { mode: 'nearest', intersect: true },
+       onClick: (evt, elements) => {
+         if (!elements.length) return;
+         selectYear(years[elements[0].index]);
+       },
+       onHover: (evt, elements) => {
+         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+       },
+       plugins: {
+         legend: { display: false },
+         // formatUnit() is called fresh every time Chart.js needs a
+         // tooltip label, so this always reflects whichever unit is
+         // active right now -- no need to touch this callback itself
+         // when the toggle changes, only re-run chart.update().
+         tooltip: {
+           callbacks: {
+             label: (c) => formatUnit(c.raw)
+           }
+         }
+       },
+       scales: {
+         x: { ticks: { color: TEXT }, grid: { color: GRID } },
+         y: {
+           beginAtZero: true,
+           ticks: { color: TEXT, callback: v => formatUnitShort(v) },
+           grid: { color: GRID },
+           title: { display: true, text: axisTitle(), color: TEXT }
+         }
+       }
+     }
+   });
+
+   // ====== Chart 2: top destination countries for the selected year ======
+   const partnersCtx = document.getElementById('partnersChart');
+
+   const initial = topPartnersForYear(selectedYear);
+   const partnersChart = new Chart(partnersCtx, {
+     type: 'bar',
+     data: {
+       labels: initial.map(r => r.name),
+       datasets: [{
+         label: datasetLabel(),
+         data: initial.map(r => r.quantity),
+         backgroundColor: TURQ,
+         hoverBackgroundColor: rgba(TURQ, 0.95),
+         borderRadius: 0,
+         borderSkipped: false,
+         barPercentage: 0.8,
+         categoryPercentage: 0.7
+       }]
+     },
+     options: {
+       indexAxis: 'y',
+       responsive: true,
+       maintainAspectRatio: false,
+       plugins: {
+         legend: { display: false },
+         tooltip: {
+           callbacks: {
+             label: (c) => formatUnit(c.raw)
+           }
+         }
+       },
+       scales: {
+         x: {
+           beginAtZero: true,
+           ticks: { color: TEXT, callback: v => formatUnitShort(v) },
+           grid: { color: GRID }
+         },
+         y: { ticks: { color: TEXT }, grid: { display: false } }
+       }
+     }
+   });
+
+   // Called when a bar in the top chart is clicked (wired up via onClick
+   // above), or when a filter (category/geography/unit) changes. Redraws
+   // both charts from the current selectedYear + filter state, and
+   // refreshes the parts of each chart's own config that depend on which
+   // unit is selected (dataset label, y-axis title) -- everything else
+   // (tooltip text, axis tick text) reads unitMode live through
+   // formatUnit()/formatUnitShort() and needs no extra update here.
+   function renderAll(){
+     // Reset every time (not just at chart creation) -- switchReporter()
+     // further down can swap "years" out for a different array entirely,
+     // and Chart.js only ever sees whatever was last assigned to its own
+     // data.labels, not the live "years" variable itself.
+     yearlyChart.data.labels = years;
+     yearlyChart.data.datasets[0].data = years.map(totalForYear);
+     yearlyChart.data.datasets[0].backgroundColor = colorsForSelection();
+     yearlyChart.data.datasets[0].label = datasetLabel();
+     yearlyChart.options.scales.y.title.text = axisTitle();
+     yearlyChart.update();
+
+     const rows = topPartnersForYear(selectedYear);
+     partnersChart.data.labels = rows.map(r => r.name);
+     partnersChart.data.datasets[0].data = rows.map(r => r.quantity);
+     partnersChart.data.datasets[0].label = datasetLabel();
+     partnersChart.update();
+     partnersTitle.textContent = `Top destination countries, ${selectedYear}`;
+   }
+
+   function selectYear(year){
+     selectedYear = year;
+     renderAll();
+   }
+
+   // ========================================================================
+   // Reporter picker -- switch which country's own trade declarations the
+   // whole page shows. Austria's data is already sitting in memory
+   // (austriaData, snapshotted above); every other reporter's data lives
+   // in its own public/data/index/<code>.js file, loaded on demand.
+   //
+   // That file is loaded via a <script src> tag, not fetch() -- these
+   // pages are meant to work when opened directly as a local file
+   // (double-click, no server), and a plain fetch() of a relative path is
+   // blocked by the browser under the file:// protocol (confirmed: it
+   // throws "Failed to fetch", since file:// is treated as an opaque
+   // origin for CORS purposes). A <script src> tag isn't subject to that
+   // restriction, so each data file just assigns itself onto
+   // window.REPORTER_DATA instead of being valid standalone JSON -- see
+   // build_dashboard.py's main() for exactly what it writes.
+   // ========================================================================
+
+   window.REPORTER_DATA = window.REPORTER_DATA || {};
+   const reporterSelect = document.getElementById('reporterSelect');
+   const reporterNameInTitle = document.getElementById('reporterNameInTitle');
+   const reporterNameInFooter = document.getElementById('reporterNameInFooter');
+   let currentReporter = 'AT';
+   // Tracks the country the user most recently asked for, even while its
+   // data is still loading -- so if they pick a second country before the
+   // first one's script tag finishes, the first one's late-arriving onload
+   // can tell it's stale and skip applying itself instead of clobbering
+   // the second (real) choice.
+   let pendingReporter = 'AT';
+
+   REPORTERS.forEach(r => {
+     const opt = document.createElement('option');
+     opt.value = r.code;
+     opt.textContent = r.name;
+     reporterSelect.appendChild(opt);
+   });
+   reporterSelect.value = currentReporter;
+
+   // Keep every tab-bar link (Yearly Exports/Map/Monthly/Export vs. Import)
+   // pointing at the currently-selected reporter, so clicking between tabs
+   // carries the choice along in the URL itself (e.g. "map.html?reporter=IE").
+   // This is the primary persistence mechanism -- it works in every browser.
+   // localStorage alone isn't enough: it turned out NOT to be shared across
+   // file:// pages in Firefox (each local file gets its own isolated origin
+   // there), even though it is in Chromium/Edge, which is what an earlier
+   // test happened to confirm against before this gap was found.
+   function updateTabLinksForReporter(code = currentReporter){
+     // Always include ?reporter=, even for Austria -- omitting it for the
+     // default case seemed tidier, but it meant a destination page had no
+     // URL instruction to go on and fell back to ITS OWN localStorage,
+     // which (in Firefox, where each file:// page's storage is isolated)
+     // could still be holding some other country from an earlier visit.
+     // Always stamping the param means every navigation is self-contained
+     // and never depends on storage at all.
+     document.querySelectorAll('a.siteTabBtn[href]').forEach(a => {
+       const base = a.getAttribute('href').split('?')[0];
+       a.setAttribute('href', `${base}?reporter=${code}`);
+     });
+   }
+   updateTabLinksForReporter();
+
+   // Restore whichever reporter was last picked. The URL's own ?reporter=
+   // param (carried over by the tab links above) is checked first since it
+   // works in every browser; localStorage is the fallback, useful in
+   // Chromium-based browsers for e.g. a retyped address-bar URL with no
+   // query string. Guarded so a stale/invalid value (an old bookmark, a
+   // different project reusing the key, browser weirdness) can't leave the
+   // page stuck trying to load a reporter that was never a real option.
+   try {
+     const fromUrl = new URLSearchParams(location.search).get('reporter');
+     const stored = fromUrl || localStorage.getItem('reporterCountry');
+     if (stored && stored !== currentReporter && REPORTERS.some(r => r.code === stored)){
+       reporterSelect.value = stored;
+       switchReporter(stored);
+     }
+   } catch (e) {
+     // localStorage unavailable (private browsing, disabled storage,
+     // etc.) -- the ?reporter= URL param above still works regardless.
+   }
+
+   reporterSelect.addEventListener('change', () => switchReporter(reporterSelect.value));
+
+   function switchReporter(code){
+     // Update the tab links to the target country right away, rather than
+     // waiting for its data to finish loading (that happens async, in
+     // applyReporterData() below) -- otherwise clicking a tab quickly right
+     // after picking a not-yet-cached country would still carry the OLD
+     // ?reporter= value, since the rewrite hadn't happened yet. If the load
+     // ends up failing and falls back to Austria, applyReporterData('AT', ...)
+     // corrects the links back to plain URLs, so this can't leave them wrong.
+     updateTabLinksForReporter(code);
+     pendingReporter = code;
+     if (code === 'AT'){
+       applyReporterData('AT', austriaData);
+       return;
+     }
+     if (window.REPORTER_DATA[code]){
+       applyReporterData(code, window.REPORTER_DATA[code]);
+       return;
+     }
+
+     // Not loaded yet -- inject the script tag. Its onload calls back in
+     // here once window.REPORTER_DATA[code] actually exists; if the file
+     // is genuinely missing (a reporter listed in REPORTERS that hasn't
+     // been fetched yet), onerror falls back to Austria rather than
+     // leaving the page stuck showing a country it has no data for. Both
+     // callbacks bail out if the user has since picked something else
+     // (pendingReporter moved on) while this one was still in flight.
+     const script = document.createElement('script');
+     script.src = `data/index/${code.toLowerCase()}.js`;
+     script.onload = () => {
+       if (pendingReporter !== code) return;
+       applyReporterData(code, window.REPORTER_DATA[code]);
+     };
+     script.onerror = () => {
+       if (pendingReporter !== code) return;
+       alert(`No data available yet for that country -- showing Austria instead.`);
+       reporterSelect.value = 'AT';
+       switchReporter('AT');
+     };
+     document.head.appendChild(script);
+   }
+
+   function applyReporterData(code, data){
+     currentReporter = code;
+     partnersByYear = data.partnersByYear;
+     years = data.years;
+     selectedYear = years[years.length - 1];
+
+     const name = (REPORTERS.find(r => r.code === code) || {}).name || code;
+     reporterNameInTitle.textContent = name;
+     reporterNameInFooter.textContent = name;
+
+     try { localStorage.setItem('reporterCountry', code); } catch (e) { /* see above */ }
+     updateTabLinksForReporter();
+
+     renderAll();
+   }
+</script>
+</body>
+</html>

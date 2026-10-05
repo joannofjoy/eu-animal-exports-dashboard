@@ -2,6 +2,8 @@
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
 
 # Power BI
 *.pbix.autosave
@@ -9,8 +11,20 @@ __pycache__/
 # VS Code
 .vscode/
 
-# Raw data
+# Claude Code local tool-permission settings -- environment-specific, not
+# part of the project itself.
+.claude/
+
+# Raw and processed data -- both are regenerated from the live Eurostat
+# API (scripts/refresh_all.py does this on a schedule in CI, see
+# .github/workflows/refresh.yml), so committing them would just mean
+# every scheduled run produces a huge, noisy diff for files nothing reads
+# from git history anyway. The built public/ output stays tracked, since
+# that's what makes a fresh clone usable via file:// without first running
+# the pipeline.
 data/raw/
+data/processed/
+data/debug/
 
 # OS
 .DS_Store

@@ -1,0 +1,628 @@
+<!--
+  This is a TEMPLATE, not the live page. It's never opened in a browser
+  directly -- scripts/build_dashboard.py reads this file, replaces the
+  __ALL_CAPS__ placeholder tokens below with real numbers (computed from
+  the CSVs in data/processed/), and writes the result out as index.html,
+  which is the actual static page. Re-run that script any time the
+  underlying data changes; editing index.html by hand would just get
+  overwritten next time it runs.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+   <meta charset="utf-8" />
+   <meta name="viewport" content="width=device-width,initial-scale=1" />
+   <title>The Marker – Austrian Live Cattle Exports</title>
+   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+
+   <style>
+     :root{
+       --pink:#E64980;
+       --turq:#6FB2A5;
+       --blue:#31688F;
+       --purple:#6D3D83;
+       --black:#010200;
+       --offwhite:#F0EEEF;
+
+       --panel: rgba(255,255,255,.04);
+       --border: rgba(240,238,239,.16);
+       --text: rgba(240,238,239,.92);
+       --muted: rgba(240,238,239,.68);
+       --grid: rgba(240,238,239,.12);
+     }
+     *{ box-sizing:border-box; }
+     body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--black); color:var(--text); }
+     .wrap{ max-width:1320px; margin:0 auto; padding:22px 18px 28px; }
+
+     /* Site-wide tab bar -- navigates between the six standalone pages
+        (a normal full-page link per tab, not a JS view-switcher). Sits
+        above the title; its own bottom border is the horizontal rule
+        that used to belong to .header. */
+     .siteTabs{ display:flex; gap:4px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+     .siteTabBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       text-decoration:none; display:inline-block;
+       background:transparent; border:none; border-bottom:2px solid transparent;
+       padding:9px 14px; cursor:pointer; margin-bottom:-1px;
+     }
+     .siteTabBtn:hover{ color:var(--text); }
+     .siteTabBtn.active{ color:var(--turq); border-bottom-color:var(--turq); cursor:default; }
+     /* Mirror Statistics is an internal/dev view, not a finished dashboard --
+        muted + italic by default, purple (not the usual turquoise) when
+        active or hovered, so it visually reads as "different" from the
+        other five tabs. */
+     .siteTabBtnDev{ color:rgba(240,238,239,.42); font-style:italic; }
+     .siteTabBtnDev:hover{ color:var(--purple); }
+     .siteTabBtnDev.active{ color:var(--purple); border-bottom-color:var(--purple); }
+
+     .header{ padding-top:14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+     h1{ margin:0; font-size:30px; line-height:1.1; letter-spacing:-0.02em; }
+
+     /* Reporter picker -- which country's own declarations this whole
+        page shows, as opposed to the geo/category filters in the sidebar,
+        which only narrow down *within* one reporter's data. Sits next to
+        the title rather than in the sidebar since it changes the page's
+        entire subject, not just what's shown of it. */
+     .headerControls{ display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+     .reporterPicker{ display:flex; flex-direction:column; gap:4px; }
+     .reporterPicker label{ font-size:12px; color:var(--muted); }
+     .reporterPicker select{
+       font: inherit; font-size:14px; color:var(--text);
+       background:#0b0c0f; border:1px solid var(--border); padding:8px 10px; min-width:170px;
+     }
+
+     /* Unit toggle (Animals / Trade value) -- a real two-segment switch,
+        not radio buttons buried in the sidebar filters, since it changes
+        how every number on the page is read -- the same importance tier
+        as which reporter is selected, so it sits right next to that
+        picker instead of down with the geo/category filters. */
+     .unitToggle{ display:flex; flex-direction:column; gap:4px; }
+     .unitToggle .toggleLabel{ font-size:12px; color:var(--muted); }
+     .unitToggleGroup{ display:inline-flex; border:1px solid var(--border); background:#0b0c0f; }
+     .unitToggleBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       background:transparent; border:none; padding:9px 14px; cursor:pointer;
+     }
+     .unitToggleBtn:hover{ color:var(--text); }
+     .unitToggleBtn.active{ background:var(--turq); color:#07140f; cursor:default; }
+     .footer{ margin-top:24px; padding-top:14px; border-top:1px solid var(--border); color:var(--muted); max-width:85ch; font-size:12.5px; line-height:1.5; }
+     .footer p{ margin:0 0 6px; }
+     .footer p:last-child{ margin-bottom:0; }
+     .footer strong{ color:rgba(240,238,239,.85); font-weight:600; }
+     .notes{ margin-top:10px; }
+     .notes summary{ font-size:12px; color:var(--turq); cursor:pointer; }
+     .notes ul{ margin:8px 0 0; padding-left:18px; }
+     .notes li{ margin-bottom:4px; }
+
+     .panel{ margin-top:16px; border:1px solid var(--border); background:var(--panel); padding:14px 14px 10px; }
+     .meta{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; font-size:12.5px; color:rgba(240,238,239,.72); }
+     .meta strong{ color:rgba(240,238,239,.92); font-weight:600; }
+     .panelTitle{ margin:0 0 4px; font-size:16px; font-weight:600; color:rgba(240,238,239,.92); }
+
+     canvas{ width:100% !important; display:block; }
+     #yearlyChart{ height:420px !important; }
+     #partnersChart{ height:380px !important; }
+
+     /* ====== Layout: main content + right-hand filter sidebar ====== */
+     .layout{ display:flex; align-items:flex-start; gap:24px; }
+     .main{ flex:1; min-width:0; }
+     .sidebar{ width:300px; flex-shrink:0; position:sticky; top:18px; }
+
+     /* ====== Filter panel (category + geography) -- stacked vertically
+        to fit the narrower sidebar column ====== */
+     .filterPanel{ border:1px solid var(--border); background:var(--panel); padding:14px 16px; }
+     .filterPanel h2{ margin:0 0 10px; font-size:13px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:rgba(240,238,239,.70); }
+     .filterRow{ display:flex; flex-direction:column; gap:20px; }
+
+     .geoFilter{ display:flex; flex-direction:column; gap:8px; font-size:13.5px; }
+     .geoFilter label{ display:flex; align-items:center; gap:5px; cursor:pointer; }
+
+     .categoryFilter{ display:flex; flex-direction:column; gap:16px; }
+     .filterGroup > label,
+     .groupLabel{ font-size:13.5px; font-weight:600; display:flex; align-items:center; gap:6px; cursor:pointer; }
+     .filterSubList{ margin:6px 0 0 20px; display:flex; flex-direction:column; gap:6px; }
+     .filterLeaf label{ font-size:13px; font-weight:400; display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--muted); }
+     .filterLeaf.filterSub label{ color:var(--text); }
+     .filterCodes{ margin:2px 0 0 20px; }
+     .filterCodes summary{ font-size:11.5px; color:rgba(240,238,239,.5); cursor:pointer; }
+     .filterCodes ul{ margin:4px 0 0; padding-left:16px; font-size:11.5px; color:rgba(240,238,239,.6); line-height:1.6; }
+     .filterCodes code{ color:var(--turq); }
+     input[type=checkbox], input[type=radio]{ accent-color: var(--turq); }
+
+     @media (max-width:900px){
+       .layout{ flex-direction:column; }
+       .sidebar{ width:100%; position:static; order:2; }
+     }
+     @media (max-width:760px){ h1{font-size:24px;} #yearlyChart{height:340px !important;} #partnersChart{height:340px !important;} }
+   </style>
+</head>
+
+<body>
+<div class="wrap">
+   <div class="siteTabs"><span class="siteTabBtn active">Yearly Exports</span><a class="siteTabBtn" href="map.html">Map</a><a class="siteTabBtn" href="monthly.html">Monthly</a><a class="siteTabBtn" href="trade_pairs.html">Export vs. Import</a><a class="siteTabBtn siteTabBtnDev" href="mirror.html" title="Internal data-quality view for development use -- not intended for publication.">Mirror Statistics (dev)</a></div>
+
+   <div class="header">
+     <div>
+       <h1>Live Cattle Exports from <span id="reporterNameInTitle">Austria</span></h1>
+     </div>
+     <div class="headerControls">
+       <div class="unitToggle">
+         <span class="toggleLabel">Unit</span>
+         <div class="unitToggleGroup" id="unitToggle">
+           <button type="button" class="unitToggleBtn active" data-unit="animals">Animals</button>
+           <button type="button" class="unitToggleBtn" data-unit="eur">Trade value (€)</button>
+         </div>
+       </div>
+       <div class="reporterPicker">
+         <label for="reporterSelect">Reporting country</label>
+         <select id="reporterSelect"></select>
+       </div>
+     </div>
+   </div>
+
+   <div class="layout">
+     <div class="main">
+       <div class="panel">
+         <p class="panelTitle">Yearly exports, 2015–2026</p>
+         <canvas id="yearlyChart"></canvas>
+       </div>
+
+       <div class="panel">
+         <div class="meta">
+           <div><strong>View:</strong> top 10 destination countries for one year -- click a bar above to change the year.</div>
+         </div>
+         <p class="panelTitle" id="partnersTitle">Top destination countries</p>
+         <canvas id="partnersChart"></canvas>
+       </div>
+
+       <div class="footer">
+         <p>
+           Live cattle exports from <span id="reporterNameInFooter">Austria</span>, 2015–2026.
+           Source: Eurostat Comext, dataset DS-045409.
+         </p>
+         <p>
+           <strong>Included:</strong> breeding cattle (pure-bred), slaughter cattle, other cattle (rearing/store).
+           <strong>Not included:</strong> buffalo.
+         </p>
+         <details class="notes"><summary>Project notes (work in progress)</summary><ul><li>Animals, not units: quantities are consistently described as “animals,” not “head” or “units” -- cattle are living creatures, not piece goods.</li><li>Product scope: 35 CN8 codes under heading 0102 (live cattle), excluding buffalo (010231/010239) and excluding the four 010210xx codes (pre-2002 nomenclature, confirmed to have zero AT data for 2015-2025). An earlier version covered only the two original breeding-cattle codes (see next point) -- that was roughly a quarter of the actual export volume.</li><li>Category filter: the 35 codes are grouped into four categories (Original selection, Other breeding cattle, Slaughter cattle, Other cattle). “Original selection” stays separately selectable so old and new figures can be compared directly.</li><li>Geography filter: All countries / EU only / Non-EU only, combinable independently of the category filter.</li><li>Aggregate partner codes (WORLD, EXT_EU, INT_EU, EXT_EA, INT_EA etc.) are excluded from all totals to avoid double-counting.</li><li>Known data issue: Croatia&#x27;s 2024 figure (original selection) is unusually high and doesn&#x27;t match Croatia&#x27;s own import declarations -- see docs/croatia_2024_anomaly.md for the full investigation.</li><li>Source: Eurostat Comext, dataset DS-045409, confirmed by Eurostat support as the correct/current dataset for CN8 detail with head counts (see docs/eurostat_comext_api.md).</li></ul></details>
+       </div>
+     </div>
+
+     <aside class="sidebar">
+       <div class="filterPanel">
+         <h2>Filter</h2>
+         <div class="filterRow">
+           <div class="geoFilter" id="geoFilter">
+             <label><input type="radio" name="geo" value="all" checked> All countries</label>
+             <label><input type="radio" name="geo" value="eu"> EU only</label>
+             <label><input type="radio" name="geo" value="noneu"> Non-EU only</label>
+           </div>
+           <div class="categoryFilter" id="categoryFilter"><div class="filterLeaf"><label><input type="radio" name="view" class="viewRadio" value="all" checked> All</label><details class="filterCodes"><summary>35 Eurostat codes</summary><ul><li><code>01022110</code> — Pure-bred breeding heifers</li><li><code>01022130</code> — Pure-bred breeding cows (excl. heifers)</li><li><code>01022190</code> — Pure-bred cattle for breeding (excl. heifers and cows)</li><li><code>01022921</code> — Cattle of a weight &gt; 80 kg but &lt;= 160 kg, for slaughter</li><li><code>01022941</code> — Cattle of a weight &gt; 160 kg but &lt;= 300 kg, for slaughter</li><li><code>01029021</code> — Domestic bovines of a weight &gt; 80 kg and &lt;= 160 kg, for slaughter</li><li><code>01029041</code> — Domestic bovines of a weight &gt; 160 kg and &lt;= 300 kg, for slaughter</li><li><code>01022910</code> — Live cattle of a weight &lt;= 80 kg (excl. pure-bred for breeding)</li><li><code>01022929</code> — Live cattle of a weight &gt; 80 kg but &lt;= 160 kg (excl. for slaughter, pure-bred for breeding)</li><li><code>01022949</code> — Live cattle of a weight &gt; 160 kg but &lt;= 300 kg (excl. for slaughter, pure-bred for breeding)</li><li><code>01029005</code> — Live domestic bovines of a weight &lt;= 80 kg (excl. pure-bred breeding animals)</li><li><code>01029010</code> — Domestic bovines, weighing =&lt; 220 kg (excl. pure-bred for breeding)</li><li><code>01029029</code> — Live domestic bovines of a weight &gt; 80 kg and &lt;= 160 kg (excl. for slaughter, pure-bred breeding animals)</li><li><code>01029049</code> — Live domestic bovines of a weight &gt; 160 kg and &lt;= 300 kg (excl. for slaughter, pure-bred breeding animals)</li><li><code>01022951</code> — Heifers of a weight &gt; 300 kg, for slaughter</li><li><code>01022961</code> — Cows of a weight &gt; 300 kg, for slaughter (excl. heifers)</li><li><code>01022991</code> — Cattle of a weight &gt; 300 kg, for slaughter (excl. heifers and cows)</li><li><code>01029051</code> — Heifers of a weight &gt; 300 kg, for slaughter</li><li><code>01029061</code> — Cows of a weight &gt; 300 kg, for slaughter (excl. heifers)</li><li><code>01029071</code> — Domestic bovines of a weight &gt; 300 kg, for slaughter (excl. heifers and cows)</li><li><code>01022959</code> — Live heifers of a weight &gt; 300 kg (excl. for slaughter and pure-bred for breeding)</li><li><code>01022969</code> — Live cows of a weight &gt; 300 kg (excl. for slaughter, pure-bred for breeding and heifers)</li><li><code>01022999</code> — Live cattle of a weight &gt; 300 kg (excl. for slaughter, pure-bred for breeding, heifers and cows)</li><li><code>01029059</code> — Live heifers of a weight &gt; 300 kg (excl. for slaughter, pure-bred breeding animals)</li><li><code>01029069</code> — Live cows of a weight &gt; 300 kg (excl. for slaughter, pure-bred breeding animals and heifers)</li><li><code>01029079</code> — Live domestic bovines of a weight &gt; 300 kg (excl. for slaughter, pure-bred breeding animals, heifers and cows)</li><li><code>01022905</code> — Live cattle of the sub-genus Bibos or Poephagus (excl. pure-bred for breeding)</li><li><code>01029020</code> — Bovine pure-bred breeding animals (excl. cattle and buffalo)</li><li><code>01029031</code> — Live heifers, weighing &gt; 220 kg (excl. pure-bred for breeding)</li><li><code>01029033</code> — Live cows, weighing &gt; 220 kg (excl. pure-bred for breeding)</li><li><code>01029035</code> — Live bulls, weighing &gt; 220 kg (excl. pure-bred for breeding)</li><li><code>01029037</code> — Live steers, weighing &gt; 220 kg</li><li><code>01029090</code> — Live non-domestic bovines (excl. pure-bred for breeding)</li><li><code>01029091</code> — Live domestic bovine animals (excl. cattle, buffalo and pure-bred for breeding)</li><li><code>01029099</code> — Live bovine animals (excl. cattle, buffalo, pure-bred for breeding and domestic species)</li></ul></details></div><div class="filterLeaf"><label><input type="radio" name="view" class="viewRadio" value="calves" > Calves (&lt;=300kg)</label><details class="filterCodes"><summary>11 Eurostat codes</summary><ul><li><code>01022921</code> — Cattle of a weight &gt; 80 kg but &lt;= 160 kg, for slaughter</li><li><code>01022941</code> — Cattle of a weight &gt; 160 kg but &lt;= 300 kg, for slaughter</li><li><code>01029021</code> — Domestic bovines of a weight &gt; 80 kg and &lt;= 160 kg, for slaughter</li><li><code>01029041</code> — Domestic bovines of a weight &gt; 160 kg and &lt;= 300 kg, for slaughter</li><li><code>01022910</code> — Live cattle of a weight &lt;= 80 kg (excl. pure-bred for breeding)</li><li><code>01022929</code> — Live cattle of a weight &gt; 80 kg but &lt;= 160 kg (excl. for slaughter, pure-bred for breeding)</li><li><code>01022949</code> — Live cattle of a weight &gt; 160 kg but &lt;= 300 kg (excl. for slaughter, pure-bred for breeding)</li><li><code>01029005</code> — Live domestic bovines of a weight &lt;= 80 kg (excl. pure-bred breeding animals)</li><li><code>01029010</code> — Domestic bovines, weighing =&lt; 220 kg (excl. pure-bred for breeding)</li><li><code>01029029</code> — Live domestic bovines of a weight &gt; 80 kg and &lt;= 160 kg (excl. for slaughter, pure-bred breeding animals)</li><li><code>01029049</code> — Live domestic bovines of a weight &gt; 160 kg and &lt;= 300 kg (excl. for slaughter, pure-bred breeding animals)</li></ul></details></div><div class="filterLeaf"><label><input type="radio" name="view" class="viewRadio" value="slaughter" > For slaughter</label><details class="filterCodes"><summary>10 Eurostat codes</summary><ul><li><code>01022921</code> — Cattle of a weight &gt; 80 kg but &lt;= 160 kg, for slaughter</li><li><code>01022941</code> — Cattle of a weight &gt; 160 kg but &lt;= 300 kg, for slaughter</li><li><code>01029021</code> — Domestic bovines of a weight &gt; 80 kg and &lt;= 160 kg, for slaughter</li><li><code>01029041</code> — Domestic bovines of a weight &gt; 160 kg and &lt;= 300 kg, for slaughter</li><li><code>01022951</code> — Heifers of a weight &gt; 300 kg, for slaughter</li><li><code>01022961</code> — Cows of a weight &gt; 300 kg, for slaughter (excl. heifers)</li><li><code>01022991</code> — Cattle of a weight &gt; 300 kg, for slaughter (excl. heifers and cows)</li><li><code>01029051</code> — Heifers of a weight &gt; 300 kg, for slaughter</li><li><code>01029061</code> — Cows of a weight &gt; 300 kg, for slaughter (excl. heifers)</li><li><code>01029071</code> — Domestic bovines of a weight &gt; 300 kg, for slaughter (excl. heifers and cows)</li></ul></details></div><div class="filterLeaf"><label><input type="radio" name="view" class="viewRadio" value="breeding" > For breeding</label><details class="filterCodes"><summary>3 Eurostat codes</summary><ul><li><code>01022110</code> — Pure-bred breeding heifers</li><li><code>01022130</code> — Pure-bred breeding cows (excl. heifers)</li><li><code>01022190</code> — Pure-bred cattle for breeding (excl. heifers and cows)</li></ul></details></div><div class="filterLeaf"><label><input type="radio" name="view" class="viewRadio" value="production" > For production/rearing</label><details class="filterCodes"><summary>13 Eurostat codes</summary><ul><li><code>01022910</code> — Live cattle of a weight &lt;= 80 kg (excl. pure-bred for breeding)</li><li><code>01022929</code> — Live cattle of a weight &gt; 80 kg but &lt;= 160 kg (excl. for slaughter, pure-bred for breeding)</li><li><code>01022949</code> — Live cattle of a weight &gt; 160 kg but &lt;= 300 kg (excl. for slaughter, pure-bred for breeding)</li><li><code>01029005</code> — Live domestic bovines of a weight &lt;= 80 kg (excl. pure-bred breeding animals)</li><li><code>01029010</code> — Domestic bovines, weighing =&lt; 220 kg (excl. pure-bred for breeding)</li><li><code>01029029</code> — Live domestic bovines of a weight &gt; 80 kg and &lt;= 160 kg (excl. for slaughter, pure-bred breeding animals)</li><li><code>01029049</code> — Live domestic bovines of a weight &gt; 160 kg and &lt;= 300 kg (excl. for slaughter, pure-bred breeding animals)</li><li><code>01022959</code> — Live heifers of a weight &gt; 300 kg (excl. for slaughter and pure-bred for breeding)</li><li><code>01022969</code> — Live cows of a weight &gt; 300 kg (excl. for slaughter, pure-bred for breeding and heifers)</li><li><code>01022999</code> — Live cattle of a weight &gt; 300 kg (excl. for slaughter, pure-bred for breeding, heifers and cows)</li><li><code>01029059</code> — Live heifers of a weight &gt; 300 kg (excl. for slaughter, pure-bred breeding animals)</li><li><code>01029069</code> — Live cows of a weight &gt; 300 kg (excl. for slaughter, pure-bred breeding animals and heifers)</li><li><code>01029079</code> — Live domestic bovines of a weight &gt; 300 kg (excl. for slaughter, pure-bred breeding animals, heifers and cows)</li></ul></details></div></div>
+         </div>
+       </div>
+     </aside>
+   </div>
+</div>
+
+<script>
+   // ====== Embedded data ======
+   // build_dashboard.py replaced these placeholders with real JSON when
+   // it built this page (see data/processed/*.csv for the source).
+   // partnersByYear holds, for every year, every partner with a category
+   // breakdown (byCategory) and EU membership (isEU) -- both charts AND
+   // both filters are computed from this, there's no separate "top 10"
+   // list that would only be correct for one fixed category selection.
+   //
+   // "let", not "const": Austria's own data is what's baked in here at
+   // build time, but switchReporter() further down reassigns both of
+   // these wholesale when a different reporting country is picked --
+   // every function below reads partnersByYear/years fresh each time it's
+   // called, so reassigning them here is all that's needed to make the
+   // rest of the page follow along.
+   let partnersByYear = {"2015": [{"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 1785}, "byCategoryValueEur": {"zuchtrinder_original": 3429400}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"young_other": 181, "zuchtrinder_original": 152}, "byCategoryValueEur": {"young_other": 78582, "zuchtrinder_original": 274070}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"adult_other": 1}, "byCategoryValueEur": {"adult_other": 1868}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"adult_slaughter": 93, "zuchtrinder_original": 72}, "byCategoryValueEur": {"adult_slaughter": 207592, "zuchtrinder_original": 86993}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 762, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"zuchtrinder_original": 1266184, "zuchtrinder_weitere": 4300}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"zuchtrinder_original": 20}, "byCategoryValueEur": {"zuchtrinder_original": 28949}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 3459, "adult_slaughter": 2424, "young_other": 13419, "young_slaughter": 532, "zuchtrinder_original": 953, "zuchtrinder_weitere": 676}, "byCategoryValueEur": {"adult_other": 2801649, "adult_slaughter": 2101226, "young_other": 3670116, "young_slaughter": 310980, "zuchtrinder_original": 1235006, "zuchtrinder_weitere": 582771}}, {"code": "DK", "name": "Denmark", "isEU": true, "byCategory": {"young_other": 15}, "byCategoryValueEur": {"young_other": 9228}}, {"code": "DZ", "name": "Algeria", "isEU": false, "byCategory": {"zuchtrinder_original": 1983}, "byCategoryValueEur": {"zuchtrinder_original": 4054560}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"zuchtrinder_original": 123, "zuchtrinder_weitere": 4}, "byCategoryValueEur": {"zuchtrinder_original": 229222, "zuchtrinder_weitere": 8081}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"young_other": 5, "zuchtrinder_original": 184, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"young_other": 3348, "zuchtrinder_original": 331687, "zuchtrinder_weitere": 10219}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"adult_other": 8, "zuchtrinder_original": 278, "zuchtrinder_weitere": 66}, "byCategoryValueEur": {"adult_other": 13093, "zuchtrinder_original": 480318, "zuchtrinder_weitere": 123477}}, {"code": "GE", "name": "Georgia", "isEU": false, "byCategory": {"zuchtrinder_original": 31}, "byCategoryValueEur": {"zuchtrinder_original": 52726}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"zuchtrinder_original": 215, "zuchtrinder_weitere": 8}, "byCategoryValueEur": {"zuchtrinder_original": 373223, "zuchtrinder_weitere": 15724}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 337, "adult_slaughter": 21, "young_other": 1412, "zuchtrinder_original": 48}, "byCategoryValueEur": {"adult_other": 262802, "adult_slaughter": 20842, "young_other": 964165, "zuchtrinder_original": 81179}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"young_other": 18, "zuchtrinder_original": 3, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"young_other": 5097, "zuchtrinder_original": 6240, "zuchtrinder_weitere": 2239}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 3352, "adult_slaughter": 8866, "young_other": 46133, "young_slaughter": 148, "zuchtrinder_original": 8193, "zuchtrinder_weitere": 10267}, "byCategoryValueEur": {"adult_other": 2971275, "adult_slaughter": 7541780, "young_other": 13608273, "young_slaughter": 99522, "zuchtrinder_original": 13254459, "zuchtrinder_weitere": 3308477}}, {"code": "LB", "name": "Lebanon", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 45500}}, {"code": "MA", "name": "Morocco", "isEU": false, "byCategory": {"zuchtrinder_original": 89}, "byCategoryValueEur": {"zuchtrinder_original": 186213}}, {"code": "ME", "name": "Montenegro", "isEU": false, "byCategory": {"zuchtrinder_original": 182}, "byCategoryValueEur": {"zuchtrinder_original": 327710}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_other": 14, "adult_slaughter": 25, "zuchtrinder_original": 6}, "byCategoryValueEur": {"adult_other": 13289, "adult_slaughter": 19450, "zuchtrinder_original": 10285}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_other": 99, "zuchtrinder_original": 129}, "byCategoryValueEur": {"young_other": 25311, "zuchtrinder_original": 254738}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"adult_other": 7, "adult_slaughter": 61, "zuchtrinder_original": 65, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 17983, "adult_slaughter": 109427, "zuchtrinder_original": 128308, "zuchtrinder_weitere": 2141}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_other": 20, "adult_slaughter": 755, "young_other": 37, "young_slaughter": 453, "zuchtrinder_original": 493}, "byCategoryValueEur": {"adult_other": 40813, "adult_slaughter": 867333, "young_other": 27060, "young_slaughter": 319028, "zuchtrinder_original": 887001}}, {"code": "TN", "name": "Tunisia", "isEU": false, "byCategory": {"zuchtrinder_original": 25}, "byCategoryValueEur": {"zuchtrinder_original": 57500}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"adult_other": 107, "young_other": 2090, "zuchtrinder_original": 10799, "zuchtrinder_weitere": 132}, "byCategoryValueEur": {"adult_other": 170772, "young_other": 2252736, "zuchtrinder_original": 25680143, "zuchtrinder_weitere": 151112}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 1980}, "byCategoryValueEur": {"zuchtrinder_original": 4635500}}, {"code": "XK", "name": "Kosovo", "isEU": false, "byCategory": {"zuchtrinder_original": 33}, "byCategoryValueEur": {"zuchtrinder_original": 50520}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 371}, "byCategoryValueEur": {"zuchtrinder_original": 616020}}], "2016": [{"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 255}, "byCategoryValueEur": {"zuchtrinder_original": 534515}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 3045, "zuchtrinder_weitere": 15}, "byCategoryValueEur": {"zuchtrinder_original": 5437790, "zuchtrinder_weitere": 50000}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 102, "zuchtrinder_weitere": 97}, "byCategoryValueEur": {"zuchtrinder_original": 179060, "zuchtrinder_weitere": 155720}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"adult_other": 40}, "byCategoryValueEur": {"adult_other": 51863}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"zuchtrinder_original": 113, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 221822, "zuchtrinder_weitere": 7669}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"young_other": 2, "zuchtrinder_original": 921, "zuchtrinder_weitere": 14}, "byCategoryValueEur": {"young_other": 2100, "zuchtrinder_original": 1460672, "zuchtrinder_weitere": 22492}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"zuchtrinder_original": 54, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 64454, "zuchtrinder_weitere": 7830}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 2524, "adult_slaughter": 3272, "young_other": 7330, "young_slaughter": 265, "zuchtrinder_original": 826, "zuchtrinder_weitere": 746}, "byCategoryValueEur": {"adult_other": 1827982, "adult_slaughter": 2506024, "young_other": 1613491, "young_slaughter": 167410, "zuchtrinder_original": 1004786, "zuchtrinder_weitere": 604707}}, {"code": "DZ", "name": "Algeria", "isEU": false, "byCategory": {"zuchtrinder_original": 126}, "byCategoryValueEur": {"zuchtrinder_original": 264978}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"adult_slaughter": 173, "young_other": 22, "zuchtrinder_original": 388, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_slaughter": 218772, "young_other": 3845, "zuchtrinder_original": 541851, "zuchtrinder_weitere": 2200}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"zuchtrinder_original": 18, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 37114, "zuchtrinder_weitere": 9080}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"zuchtrinder_original": 165, "zuchtrinder_weitere": 73}, "byCategoryValueEur": {"zuchtrinder_original": 280959, "zuchtrinder_weitere": 168824}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"young_other": 287, "zuchtrinder_original": 3, "zuchtrinder_weitere": 7}, "byCategoryValueEur": {"young_other": 253590, "zuchtrinder_original": 5328, "zuchtrinder_weitere": 8451}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 923, "adult_slaughter": 72, "young_other": 3971, "young_slaughter": 63, "zuchtrinder_original": 1453}, "byCategoryValueEur": {"adult_other": 623637, "adult_slaughter": 68088, "young_other": 2086916, "young_slaughter": 63088, "zuchtrinder_original": 1331339}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"zuchtrinder_original": 100, "zuchtrinder_weitere": 28}, "byCategoryValueEur": {"zuchtrinder_original": 109283, "zuchtrinder_weitere": 56666}}, {"code": "IR", "name": "Iran", "isEU": false, "byCategory": {"zuchtrinder_original": 958, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 1994905, "zuchtrinder_weitere": 23600}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 3902, "adult_slaughter": 6853, "young_other": 40373, "young_slaughter": 718, "zuchtrinder_original": 8884, "zuchtrinder_weitere": 9931}, "byCategoryValueEur": {"adult_other": 3427650, "adult_slaughter": 5961580, "young_other": 12922161, "young_slaughter": 421639, "zuchtrinder_original": 13166368, "zuchtrinder_weitere": 3213472}}, {"code": "LV", "name": "Latvia", "isEU": true, "byCategory": {"zuchtrinder_original": 60, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"zuchtrinder_original": 105703, "zuchtrinder_weitere": 2560}}, {"code": "MA", "name": "Morocco", "isEU": false, "byCategory": {"zuchtrinder_original": 31}, "byCategoryValueEur": {"zuchtrinder_original": 63400}}, {"code": "ME", "name": "Montenegro", "isEU": false, "byCategory": {"zuchtrinder_original": 277}, "byCategoryValueEur": {"zuchtrinder_original": 520600}}, {"code": "MK", "name": "North Macedonia", "isEU": false, "byCategory": {"zuchtrinder_original": 92, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"zuchtrinder_original": 163012, "zuchtrinder_weitere": 2800}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_other": 11, "adult_slaughter": 15, "zuchtrinder_original": 278}, "byCategoryValueEur": {"adult_other": 9920, "adult_slaughter": 10658, "zuchtrinder_original": 366545}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_other": 302, "zuchtrinder_original": 49}, "byCategoryValueEur": {"young_other": 68632, "zuchtrinder_original": 86355}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"adult_other": 27, "adult_slaughter": 221, "zuchtrinder_original": 57, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 44896, "adult_slaughter": 376836, "zuchtrinder_original": 110274, "zuchtrinder_weitere": 1937}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_other": 5, "adult_slaughter": 370, "young_slaughter": 510, "zuchtrinder_original": 112}, "byCategoryValueEur": {"adult_other": 7499, "adult_slaughter": 405699, "young_slaughter": 313353, "zuchtrinder_original": 180005}}, {"code": "SK", "name": "Slovakia", "isEU": true, "byCategory": {"adult_other": 26, "adult_slaughter": 467, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"adult_other": 47386, "adult_slaughter": 605356, "zuchtrinder_weitere": 13321}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"young_other": 1459, "zuchtrinder_original": 13967, "zuchtrinder_weitere": 376}, "byCategoryValueEur": {"young_other": 1286746, "zuchtrinder_original": 31414501, "zuchtrinder_weitere": 478470}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 924}, "byCategoryValueEur": {"zuchtrinder_original": 2234800}}, {"code": "XK", "name": "Kosovo", "isEU": false, "byCategory": {"zuchtrinder_original": 63}, "byCategoryValueEur": {"zuchtrinder_original": 96520}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 93}, "byCategoryValueEur": {"zuchtrinder_original": 152520}}], "2017": [{"code": "AL", "name": "Albania", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 47000}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 1609}, "byCategoryValueEur": {"zuchtrinder_original": 3430960}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"zuchtrinder_original": 10}, "byCategoryValueEur": {"zuchtrinder_original": 19981}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"adult_other": 62, "zuchtrinder_original": 112, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 121206, "zuchtrinder_original": 240822, "zuchtrinder_weitere": 2416}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 879, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 1412705, "zuchtrinder_weitere": 7550}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"zuchtrinder_original": 35, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"zuchtrinder_original": 39690, "zuchtrinder_weitere": 11608}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 2258, "adult_slaughter": 3738, "young_other": 7134, "young_slaughter": 202, "zuchtrinder_original": 1301, "zuchtrinder_weitere": 650}, "byCategoryValueEur": {"adult_other": 1855856, "adult_slaughter": 3253708, "young_other": 2337559, "young_slaughter": 155919, "zuchtrinder_original": 1873338, "zuchtrinder_weitere": 552236}}, {"code": "DZ", "name": "Algeria", "isEU": false, "byCategory": {"zuchtrinder_original": 30}, "byCategoryValueEur": {"zuchtrinder_original": 55000}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"adult_other": 419, "adult_slaughter": 862, "young_other": 1851, "zuchtrinder_original": 106, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 624732, "adult_slaughter": 1180126, "young_other": 334212, "zuchtrinder_original": 169074, "zuchtrinder_weitere": 1527}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"adult_other": 33, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 51490, "zuchtrinder_weitere": 2674}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"zuchtrinder_original": 62, "zuchtrinder_weitere": 57}, "byCategoryValueEur": {"zuchtrinder_original": 132901, "zuchtrinder_weitere": 133415}}, {"code": "GE", "name": "Georgia", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 63550}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"young_other": 133, "zuchtrinder_original": 142}, "byCategoryValueEur": {"young_other": 117773, "zuchtrinder_original": 262016}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 382, "adult_slaughter": 418, "young_other": 4076, "zuchtrinder_original": 2193}, "byCategoryValueEur": {"adult_other": 318272, "adult_slaughter": 422587, "young_other": 1610169, "zuchtrinder_original": 2848029}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"zuchtrinder_original": 44, "zuchtrinder_weitere": 30}, "byCategoryValueEur": {"zuchtrinder_original": 84709, "zuchtrinder_weitere": 59856}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 3071, "adult_slaughter": 7149, "young_other": 39252, "young_slaughter": 367, "zuchtrinder_original": 7720, "zuchtrinder_weitere": 7964}, "byCategoryValueEur": {"adult_other": 2962918, "adult_slaughter": 6153237, "young_other": 11717659, "young_slaughter": 209520, "zuchtrinder_original": 12080675, "zuchtrinder_weitere": 2356605}}, {"code": "MA", "name": "Morocco", "isEU": false, "byCategory": {"zuchtrinder_original": 154}, "byCategoryValueEur": {"zuchtrinder_original": 343945}}, {"code": "ME", "name": "Montenegro", "isEU": false, "byCategory": {"zuchtrinder_original": 288}, "byCategoryValueEur": {"zuchtrinder_original": 497940}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_other": 22, "adult_slaughter": 23, "young_other": 2, "zuchtrinder_original": 146}, "byCategoryValueEur": {"adult_other": 19309, "adult_slaughter": 19386, "young_other": 1002, "zuchtrinder_original": 264993}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"adult_slaughter": 180, "young_other": 681, "zuchtrinder_original": 75}, "byCategoryValueEur": {"adult_slaughter": 182335, "young_other": 128898, "zuchtrinder_original": 133372}}, {"code": "QA", "name": "Qatar", "isEU": false, "byCategory": {"zuchtrinder_original": 8}, "byCategoryValueEur": {"zuchtrinder_original": 16700}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"adult_other": 10, "adult_slaughter": 51, "zuchtrinder_original": 41}, "byCategoryValueEur": {"adult_other": 18120, "adult_slaughter": 86769, "zuchtrinder_original": 71947}}, {"code": "RU", "name": "Russia", "isEU": false, "byCategory": {"zuchtrinder_original": 377}, "byCategoryValueEur": {"zuchtrinder_original": 809870}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_slaughter": 687, "young_slaughter": 83, "zuchtrinder_original": 101}, "byCategoryValueEur": {"adult_slaughter": 848762, "young_slaughter": 49483, "zuchtrinder_original": 174832}}, {"code": "SK", "name": "Slovakia", "isEU": true, "byCategory": {"zuchtrinder_original": 28}, "byCategoryValueEur": {"zuchtrinder_original": 46237}}, {"code": "SN", "name": "Senegal", "isEU": false, "byCategory": {"zuchtrinder_original": 91}, "byCategoryValueEur": {"zuchtrinder_original": 137140}}, {"code": "TM", "name": "Turkmenistan", "isEU": false, "byCategory": {"zuchtrinder_original": 31}, "byCategoryValueEur": {"zuchtrinder_original": 82910}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"young_other": 73, "zuchtrinder_original": 18823, "zuchtrinder_weitere": 694}, "byCategoryValueEur": {"young_other": 87750, "zuchtrinder_original": 45880078, "zuchtrinder_weitere": 1066650}}, {"code": "UA", "name": "Ukraine", "isEU": false, "byCategory": {"zuchtrinder_original": 2, "zuchtrinder_weitere": 6}, "byCategoryValueEur": {"zuchtrinder_original": 5400, "zuchtrinder_weitere": 30000}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 1052, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 2534380, "zuchtrinder_weitere": 11400}}, {"code": "XK", "name": "Kosovo", "isEU": false, "byCategory": {"zuchtrinder_original": 107, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"zuchtrinder_original": 211300, "zuchtrinder_weitere": 1900}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 454}, "byCategoryValueEur": {"zuchtrinder_original": 819980}}], "2018": [{"code": "AL", "name": "Albania", "isEU": false, "byCategory": {"zuchtrinder_original": 30}, "byCategoryValueEur": {"zuchtrinder_original": 44130}}, {"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 119}, "byCategoryValueEur": {"zuchtrinder_original": 288218}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 1683}, "byCategoryValueEur": {"zuchtrinder_original": 3734360}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 33}, "byCategoryValueEur": {"zuchtrinder_original": 56100}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"zuchtrinder_original": 12}, "byCategoryValueEur": {"zuchtrinder_original": 20450}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"adult_other": 63, "zuchtrinder_original": 126}, "byCategoryValueEur": {"adult_other": 119831, "zuchtrinder_original": 247197}}, {"code": "BH", "name": "Bahrain", "isEU": false, "byCategory": {"zuchtrinder_original": 20, "zuchtrinder_weitere": 4}, "byCategoryValueEur": {"zuchtrinder_original": 24000, "zuchtrinder_weitere": 4800}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 759}, "byCategoryValueEur": {"zuchtrinder_original": 1213209}}, {"code": "CY", "name": "Cyprus", "isEU": true, "byCategory": {"adult_other": 33}, "byCategoryValueEur": {"adult_other": 65204}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"zuchtrinder_original": 62, "zuchtrinder_weitere": 4}, "byCategoryValueEur": {"zuchtrinder_original": 56981, "zuchtrinder_weitere": 24867}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 2884, "adult_slaughter": 2848, "young_other": 1895, "young_slaughter": 197, "zuchtrinder_original": 1494, "zuchtrinder_weitere": 449}, "byCategoryValueEur": {"adult_other": 2363449, "adult_slaughter": 2453590, "young_other": 839778, "young_slaughter": 176282, "zuchtrinder_original": 2001920, "zuchtrinder_weitere": 416432}}, {"code": "DZ", "name": "Algeria", "isEU": false, "byCategory": {"zuchtrinder_original": 660}, "byCategoryValueEur": {"zuchtrinder_original": 1315877}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"adult_other": 161, "young_other": 5589, "zuchtrinder_original": 378}, "byCategoryValueEur": {"adult_other": 313073, "young_other": 1189990, "zuchtrinder_original": 662405}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"zuchtrinder_original": 38, "zuchtrinder_weitere": 40}, "byCategoryValueEur": {"zuchtrinder_original": 73592, "zuchtrinder_weitere": 81927}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"young_other": 28, "zuchtrinder_original": 348, "zuchtrinder_weitere": 4}, "byCategoryValueEur": {"young_other": 7321, "zuchtrinder_original": 585752, "zuchtrinder_weitere": 6713}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 550, "adult_slaughter": 2, "young_other": 1337, "zuchtrinder_original": 1323, "zuchtrinder_weitere": 52}, "byCategoryValueEur": {"adult_other": 462761, "adult_slaughter": 4200, "young_other": 593807, "zuchtrinder_original": 1512960, "zuchtrinder_weitere": 57028}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"young_other": 44}, "byCategoryValueEur": {"young_other": 7527}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 2903, "adult_slaughter": 5336, "young_other": 33305, "young_slaughter": 1470, "zuchtrinder_original": 7690, "zuchtrinder_weitere": 7615}, "byCategoryValueEur": {"adult_other": 2537762, "adult_slaughter": 4556869, "young_other": 9558373, "young_slaughter": 1218666, "zuchtrinder_original": 11759706, "zuchtrinder_weitere": 2222542}}, {"code": "MA", "name": "Morocco", "isEU": false, "byCategory": {"zuchtrinder_original": 181, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"zuchtrinder_original": 383520, "zuchtrinder_weitere": 2350}}, {"code": "ME", "name": "Montenegro", "isEU": false, "byCategory": {"zuchtrinder_original": 121}, "byCategoryValueEur": {"zuchtrinder_original": 208720}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_other": 17, "adult_slaughter": 34, "zuchtrinder_original": 305}, "byCategoryValueEur": {"adult_other": 14612, "adult_slaughter": 28706, "zuchtrinder_original": 578023}}, {"code": "PE", "name": "Peru", "isEU": false, "byCategory": {"zuchtrinder_original": 16}, "byCategoryValueEur": {"zuchtrinder_original": 59800}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_other": 1961, "zuchtrinder_original": 57}, "byCategoryValueEur": {"young_other": 422097, "zuchtrinder_original": 103104}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"adult_other": 84, "young_other": 120, "zuchtrinder_original": 496}, "byCategoryValueEur": {"adult_other": 126292, "young_other": 174144, "zuchtrinder_original": 973316}}, {"code": "RU", "name": "Russia", "isEU": false, "byCategory": {"zuchtrinder_original": 489, "zuchtrinder_weitere": 13}, "byCategoryValueEur": {"zuchtrinder_original": 1117230, "zuchtrinder_weitere": 67260}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_other": 15, "adult_slaughter": 802, "young_slaughter": 91, "zuchtrinder_original": 150}, "byCategoryValueEur": {"adult_other": 26750, "adult_slaughter": 1020266, "young_slaughter": 64488, "zuchtrinder_original": 259017}}, {"code": "SK", "name": "Slovakia", "isEU": true, "byCategory": {"zuchtrinder_original": 13}, "byCategoryValueEur": {"zuchtrinder_original": 11082}}, {"code": "SN", "name": "Senegal", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 51960}}, {"code": "TM", "name": "Turkmenistan", "isEU": false, "byCategory": {"zuchtrinder_original": 430}, "byCategoryValueEur": {"zuchtrinder_original": 831050}}, {"code": "TN", "name": "Tunisia", "isEU": false, "byCategory": {"zuchtrinder_original": 99}, "byCategoryValueEur": {"zuchtrinder_original": 209550}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"adult_other": 52, "young_other": 128, "zuchtrinder_original": 10133, "zuchtrinder_weitere": 251}, "byCategoryValueEur": {"adult_other": 71300, "young_other": 163400, "zuchtrinder_original": 22290763, "zuchtrinder_weitere": 425250}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 3507, "zuchtrinder_weitere": 5}, "byCategoryValueEur": {"zuchtrinder_original": 7905908, "zuchtrinder_weitere": 13995}}, {"code": "XK", "name": "Kosovo", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 44000}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 364}, "byCategoryValueEur": {"zuchtrinder_original": 645910}}], "2019": [{"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 300}, "byCategoryValueEur": {"zuchtrinder_original": 720000}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 2219}, "byCategoryValueEur": {"zuchtrinder_original": 4835544}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 205}, "byCategoryValueEur": {"zuchtrinder_original": 398500}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"zuchtrinder_original": 60}, "byCategoryValueEur": {"zuchtrinder_original": 107722}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"adult_other": 98, "zuchtrinder_original": 149, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 192596, "zuchtrinder_original": 286799, "zuchtrinder_weitere": 1335}}, {"code": "BH", "name": "Bahrain", "isEU": false, "byCategory": {"zuchtrinder_original": 36, "zuchtrinder_weitere": 48}, "byCategoryValueEur": {"zuchtrinder_original": 43200, "zuchtrinder_weitere": 60000}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 869, "zuchtrinder_weitere": 21}, "byCategoryValueEur": {"zuchtrinder_original": 1345605, "zuchtrinder_weitere": 69800}}, {"code": "CY", "name": "Cyprus", "isEU": true, "byCategory": {"zuchtrinder_original": 35}, "byCategoryValueEur": {"zuchtrinder_original": 50515}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"young_slaughter": 218, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"young_slaughter": 136849, "zuchtrinder_weitere": 16334}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 2163, "adult_slaughter": 2312, "young_other": 1499, "young_slaughter": 81, "zuchtrinder_original": 910, "zuchtrinder_weitere": 403}, "byCategoryValueEur": {"adult_other": 1700265, "adult_slaughter": 1977305, "young_other": 614704, "young_slaughter": 71102, "zuchtrinder_original": 1348609, "zuchtrinder_weitere": 348700}}, {"code": "DZ", "name": "Algeria", "isEU": false, "byCategory": {"zuchtrinder_original": 2077}, "byCategoryValueEur": {"zuchtrinder_original": 3979105}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"adult_other": 118, "young_other": 6053, "zuchtrinder_original": 286, "zuchtrinder_weitere": 792}, "byCategoryValueEur": {"adult_other": 154750, "young_other": 1164798, "zuchtrinder_original": 486020, "zuchtrinder_weitere": 164055}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"zuchtrinder_original": 2}, "byCategoryValueEur": {"zuchtrinder_original": 4396}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"zuchtrinder_original": 349, "zuchtrinder_weitere": 36}, "byCategoryValueEur": {"zuchtrinder_original": 650051, "zuchtrinder_weitere": 91660}}, {"code": "GE", "name": "Georgia", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 65600}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"adult_other": 1, "young_other": 385, "zuchtrinder_original": 676, "zuchtrinder_weitere": 9}, "byCategoryValueEur": {"adult_other": 920, "young_other": 133306, "zuchtrinder_original": 1241562, "zuchtrinder_weitere": 20230}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 396, "young_other": 2600, "young_slaughter": 66, "zuchtrinder_original": 340, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"adult_other": 313434, "young_other": 1344027, "young_slaughter": 39198, "zuchtrinder_original": 372947, "zuchtrinder_weitere": 7029}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"zuchtrinder_original": 559, "zuchtrinder_weitere": 27}, "byCategoryValueEur": {"zuchtrinder_original": 722313, "zuchtrinder_weitere": 54760}}, {"code": "IR", "name": "Iran", "isEU": false, "byCategory": {"zuchtrinder_original": 2232}, "byCategoryValueEur": {"zuchtrinder_original": 4843650}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 3070, "adult_slaughter": 7663, "young_other": 31559, "young_slaughter": 135, "zuchtrinder_original": 8186, "zuchtrinder_weitere": 6550}, "byCategoryValueEur": {"adult_other": 2626602, "adult_slaughter": 6546949, "young_other": 8219714, "young_slaughter": 66259, "zuchtrinder_original": 12999163, "zuchtrinder_weitere": 1841318}}, {"code": "KZ", "name": "Kazakhstan", "isEU": false, "byCategory": {"zuchtrinder_original": 1774}, "byCategoryValueEur": {"zuchtrinder_original": 3422846}}, {"code": "MA", "name": "Morocco", "isEU": false, "byCategory": {"adult_other": 32, "zuchtrinder_original": 251}, "byCategoryValueEur": {"adult_other": 54050, "zuchtrinder_original": 524935}}, {"code": "ME", "name": "Montenegro", "isEU": false, "byCategory": {"zuchtrinder_original": 106}, "byCategoryValueEur": {"zuchtrinder_original": 201059}}, {"code": "MK", "name": "North Macedonia", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 61220}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_other": 351, "adult_slaughter": 299, "zuchtrinder_original": 281, "zuchtrinder_weitere": 5}, "byCategoryValueEur": {"adult_other": 327617, "adult_slaughter": 243520, "zuchtrinder_original": 406742, "zuchtrinder_weitere": 13344}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_other": 2635, "zuchtrinder_original": 245, "zuchtrinder_weitere": 345}, "byCategoryValueEur": {"young_other": 667996, "zuchtrinder_original": 368341, "zuchtrinder_weitere": 65608}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"adult_other": 30, "zuchtrinder_original": 185, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 56813, "zuchtrinder_original": 340410, "zuchtrinder_weitere": 1917}}, {"code": "RU", "name": "Russia", "isEU": false, "byCategory": {"zuchtrinder_original": 1121, "zuchtrinder_weitere": 5}, "byCategoryValueEur": {"zuchtrinder_original": 2429450, "zuchtrinder_weitere": 8800}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_other": 6, "adult_slaughter": 136, "young_other": 20, "young_slaughter": 172, "zuchtrinder_original": 124}, "byCategoryValueEur": {"adult_other": 9730, "adult_slaughter": 151270, "young_other": 6178, "young_slaughter": 109013, "zuchtrinder_original": 222939}}, {"code": "SK", "name": "Slovakia", "isEU": true, "byCategory": {"zuchtrinder_original": 4}, "byCategoryValueEur": {"zuchtrinder_original": 3089}}, {"code": "SN", "name": "Senegal", "isEU": false, "byCategory": {"zuchtrinder_original": 34}, "byCategoryValueEur": {"zuchtrinder_original": 49040}}, {"code": "TM", "name": "Turkmenistan", "isEU": false, "byCategory": {"zuchtrinder_original": 219}, "byCategoryValueEur": {"zuchtrinder_original": 623310}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"zuchtrinder_original": 2149, "zuchtrinder_weitere": 90}, "byCategoryValueEur": {"zuchtrinder_original": 3371571, "zuchtrinder_weitere": 154000}}, {"code": "UA", "name": "Ukraine", "isEU": false, "byCategory": {"zuchtrinder_original": 30}, "byCategoryValueEur": {"zuchtrinder_original": 65100}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 4724, "zuchtrinder_weitere": 78}, "byCategoryValueEur": {"zuchtrinder_original": 10309271, "zuchtrinder_weitere": 138560}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 289, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"zuchtrinder_original": 536840, "zuchtrinder_weitere": 5500}}], "2020": [{"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 151}, "byCategoryValueEur": {"zuchtrinder_original": 338710}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 2232}, "byCategoryValueEur": {"zuchtrinder_original": 5861236}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"adult_other": 23, "young_other": 4, "zuchtrinder_original": 93}, "byCategoryValueEur": {"adult_other": 11164, "young_other": 636, "zuchtrinder_original": 161100}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"zuchtrinder_original": 28}, "byCategoryValueEur": {"zuchtrinder_original": 52365}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"adult_other": 89, "zuchtrinder_original": 61, "zuchtrinder_weitere": 4}, "byCategoryValueEur": {"adult_other": 176467, "zuchtrinder_original": 102929, "zuchtrinder_weitere": 10448}}, {"code": "BH", "name": "Bahrain", "isEU": false, "byCategory": {"zuchtrinder_weitere": 60}, "byCategoryValueEur": {"zuchtrinder_weitere": 79010}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 748, "zuchtrinder_weitere": 14}, "byCategoryValueEur": {"zuchtrinder_original": 1186259, "zuchtrinder_weitere": 23602}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"zuchtrinder_original": 2, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 3387, "zuchtrinder_weitere": 12337}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 1076, "adult_slaughter": 2466, "young_other": 1099, "young_slaughter": 70, "zuchtrinder_original": 1374, "zuchtrinder_weitere": 500}, "byCategoryValueEur": {"adult_other": 854128, "adult_slaughter": 1782436, "young_other": 459543, "young_slaughter": 58533, "zuchtrinder_original": 2025803, "zuchtrinder_weitere": 442857}}, {"code": "DZ", "name": "Algeria", "isEU": false, "byCategory": {"zuchtrinder_original": 1026, "zuchtrinder_weitere": 10}, "byCategoryValueEur": {"zuchtrinder_original": 2181491, "zuchtrinder_weitere": 41200}}, {"code": "ER", "name": "Eritrea", "isEU": false, "byCategory": {"zuchtrinder_original": 142}, "byCategoryValueEur": {"zuchtrinder_original": 269900}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"adult_other": 3, "young_other": 4944, "zuchtrinder_original": 218, "zuchtrinder_weitere": 4498}, "byCategoryValueEur": {"adult_other": 6321, "young_other": 1009832, "zuchtrinder_original": 460660, "zuchtrinder_weitere": 954257}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"zuchtrinder_original": 8}, "byCategoryValueEur": {"zuchtrinder_original": 15940}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"adult_other": 152, "zuchtrinder_original": 109, "zuchtrinder_weitere": 90}, "byCategoryValueEur": {"adult_other": 189814, "zuchtrinder_original": 185155, "zuchtrinder_weitere": 162923}}, {"code": "GE", "name": "Georgia", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 62000}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"adult_other": 30, "young_other": 1206, "young_slaughter": 52, "zuchtrinder_original": 199, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 31807, "young_other": 432445, "young_slaughter": 17763, "zuchtrinder_original": 331205, "zuchtrinder_weitere": 2208}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 221, "adult_slaughter": 21, "young_other": 1061, "zuchtrinder_original": 62}, "byCategoryValueEur": {"adult_other": 207352, "adult_slaughter": 36282, "young_other": 517191, "zuchtrinder_original": 96524}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"adult_slaughter": 10, "zuchtrinder_original": 783, "zuchtrinder_weitere": 27}, "byCategoryValueEur": {"adult_slaughter": 18331, "zuchtrinder_original": 1174409, "zuchtrinder_weitere": 48109}}, {"code": "IR", "name": "Iran", "isEU": false, "byCategory": {"zuchtrinder_original": 728}, "byCategoryValueEur": {"zuchtrinder_original": 1527100}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 2228, "adult_slaughter": 6109, "young_other": 24258, "young_slaughter": 111, "zuchtrinder_original": 6248, "zuchtrinder_weitere": 6331}, "byCategoryValueEur": {"adult_other": 1903229, "adult_slaughter": 5107938, "young_other": 6105818, "young_slaughter": 49623, "zuchtrinder_original": 10327025, "zuchtrinder_weitere": 2111887}}, {"code": "KG", "name": "Kyrgyzstan", "isEU": false, "byCategory": {"zuchtrinder_original": 95}, "byCategoryValueEur": {"zuchtrinder_original": 232864}}, {"code": "KZ", "name": "Kazakhstan", "isEU": false, "byCategory": {"zuchtrinder_original": 1723, "zuchtrinder_weitere": 7}, "byCategoryValueEur": {"zuchtrinder_original": 3792260, "zuchtrinder_weitere": 26950}}, {"code": "LT", "name": "Lithuania", "isEU": true, "byCategory": {"zuchtrinder_original": 39}, "byCategoryValueEur": {"zuchtrinder_original": 34316}}, {"code": "MA", "name": "Morocco", "isEU": false, "byCategory": {"adult_other": 32}, "byCategoryValueEur": {"adult_other": 54450}}, {"code": "ME", "name": "Montenegro", "isEU": false, "byCategory": {"zuchtrinder_original": 75}, "byCategoryValueEur": {"zuchtrinder_original": 145910}}, {"code": "MK", "name": "North Macedonia", "isEU": false, "byCategory": {"zuchtrinder_original": 15}, "byCategoryValueEur": {"zuchtrinder_original": 35000}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_other": 567, "adult_slaughter": 353, "zuchtrinder_original": 101}, "byCategoryValueEur": {"adult_other": 552236, "adult_slaughter": 278410, "zuchtrinder_original": 171637}}, {"code": "PE", "name": "Peru", "isEU": false, "byCategory": {"zuchtrinder_original": 8}, "byCategoryValueEur": {"zuchtrinder_original": 15800}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"adult_other": 198, "young_other": 4874, "zuchtrinder_original": 52, "zuchtrinder_weitere": 2265}, "byCategoryValueEur": {"adult_other": 201265, "young_other": 1082295, "zuchtrinder_original": 90794, "zuchtrinder_weitere": 449462}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"adult_other": 31, "young_other": 172, "zuchtrinder_original": 820, "zuchtrinder_weitere": 12}, "byCategoryValueEur": {"adult_other": 40164, "young_other": 288364, "zuchtrinder_original": 997605, "zuchtrinder_weitere": 24600}}, {"code": "RU", "name": "Russia", "isEU": false, "byCategory": {"zuchtrinder_original": 975}, "byCategoryValueEur": {"zuchtrinder_original": 2179525}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_other": 7, "adult_slaughter": 78, "young_slaughter": 66, "zuchtrinder_original": 163, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_other": 12597, "adult_slaughter": 83291, "young_slaughter": 38991, "zuchtrinder_original": 289279, "zuchtrinder_weitere": 402}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"zuchtrinder_original": 2095, "zuchtrinder_weitere": 12}, "byCategoryValueEur": {"zuchtrinder_original": 3925879, "zuchtrinder_weitere": 34760}}, {"code": "UA", "name": "Ukraine", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 70080}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 6932, "zuchtrinder_weitere": 37}, "byCategoryValueEur": {"zuchtrinder_original": 14749461, "zuchtrinder_weitere": 70014}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 30}, "byCategoryValueEur": {"zuchtrinder_original": 65800}}], "2021": [{"code": "AL", "name": "Albania", "isEU": false, "byCategory": {"zuchtrinder_original": 33}, "byCategoryValueEur": {"zuchtrinder_original": 56400}}, {"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 181}, "byCategoryValueEur": {"zuchtrinder_original": 403020}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 2859}, "byCategoryValueEur": {"zuchtrinder_original": 7574739}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 74}, "byCategoryValueEur": {"zuchtrinder_original": 116008}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"adult_other": 110, "zuchtrinder_original": 58, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"adult_other": 130873, "zuchtrinder_original": 108125, "zuchtrinder_weitere": 5013}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"other_unclassified": 1, "zuchtrinder_original": 779, "zuchtrinder_weitere": 54}, "byCategoryValueEur": {"other_unclassified": 399, "zuchtrinder_original": 1288368, "zuchtrinder_weitere": 103296}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 1055, "adult_slaughter": 2815, "young_other": 1170, "young_slaughter": 14, "zuchtrinder_original": 985, "zuchtrinder_weitere": 338}, "byCategoryValueEur": {"adult_other": 1038888, "adult_slaughter": 2364070, "young_other": 509579, "young_slaughter": 11763, "zuchtrinder_original": 1461020, "zuchtrinder_weitere": 364353}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"young_other": 3531, "zuchtrinder_original": 396, "zuchtrinder_weitere": 1093}, "byCategoryValueEur": {"young_other": 699912, "zuchtrinder_original": 675465, "zuchtrinder_weitere": 259412}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"zuchtrinder_original": 26, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"zuchtrinder_original": 52913, "zuchtrinder_weitere": 3311}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"adult_other": 526, "zuchtrinder_original": 157, "zuchtrinder_weitere": 26}, "byCategoryValueEur": {"adult_other": 757754, "zuchtrinder_original": 254405, "zuchtrinder_weitere": 67460}}, {"code": "GR", "name": "Greece", "isEU": true, "byCategory": {"zuchtrinder_original": 18}, "byCategoryValueEur": {"zuchtrinder_original": 25277}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"adult_other": 6, "young_other": 489, "zuchtrinder_original": 397, "zuchtrinder_weitere": 132}, "byCategoryValueEur": {"adult_other": 8506, "young_other": 156382, "zuchtrinder_original": 775866, "zuchtrinder_weitere": 66637}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 280, "young_other": 1136, "zuchtrinder_original": 15, "zuchtrinder_weitere": 287}, "byCategoryValueEur": {"adult_other": 324534, "young_other": 775218, "zuchtrinder_original": 21067, "zuchtrinder_weitere": 109202}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"adult_other": 142, "adult_slaughter": 18, "young_other": 20, "zuchtrinder_original": 875, "zuchtrinder_weitere": 29}, "byCategoryValueEur": {"adult_other": 272382, "adult_slaughter": 39471, "young_other": 13650, "zuchtrinder_original": 1239635, "zuchtrinder_weitere": 53876}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 1225, "adult_slaughter": 4733, "young_other": 19233, "young_slaughter": 23, "zuchtrinder_original": 6932, "zuchtrinder_weitere": 2474}, "byCategoryValueEur": {"adult_other": 1276419, "adult_slaughter": 4262930, "young_other": 5742797, "young_slaughter": 16293, "zuchtrinder_original": 12108364, "zuchtrinder_weitere": 937733}}, {"code": "KG", "name": "Kyrgyzstan", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 76800}}, {"code": "KZ", "name": "Kazakhstan", "isEU": false, "byCategory": {"zuchtrinder_original": 1283}, "byCategoryValueEur": {"zuchtrinder_original": 2719870}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_other": 44, "adult_slaughter": 146, "young_other": 95, "zuchtrinder_original": 427, "zuchtrinder_weitere": 125}, "byCategoryValueEur": {"adult_other": 47097, "adult_slaughter": 127284, "young_other": 25213, "zuchtrinder_original": 694697, "zuchtrinder_weitere": 36638}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"adult_other": 122, "young_other": 6385, "zuchtrinder_weitere": 1418}, "byCategoryValueEur": {"adult_other": 124969, "young_other": 1389505, "zuchtrinder_weitere": 380308}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"young_other": 92, "zuchtrinder_original": 374, "zuchtrinder_weitere": 57}, "byCategoryValueEur": {"young_other": 23924, "zuchtrinder_original": 364696, "zuchtrinder_weitere": 35745}}, {"code": "RU", "name": "Russia", "isEU": false, "byCategory": {"zuchtrinder_original": 216}, "byCategoryValueEur": {"zuchtrinder_original": 474010}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_slaughter": 198, "young_other": 33, "zuchtrinder_original": 156, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_slaughter": 247762, "young_other": 9882, "zuchtrinder_original": 257913, "zuchtrinder_weitere": 2464}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"zuchtrinder_original": 1747, "zuchtrinder_weitere": 7}, "byCategoryValueEur": {"zuchtrinder_original": 3116540, "zuchtrinder_weitere": 27553}}, {"code": "UA", "name": "Ukraine", "isEU": false, "byCategory": {"zuchtrinder_original": 256}, "byCategoryValueEur": {"zuchtrinder_original": 560640}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 4704}, "byCategoryValueEur": {"zuchtrinder_original": 10426017}}], "2022": [{"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 75520}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 1118}, "byCategoryValueEur": {"zuchtrinder_original": 3423062}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 430}, "byCategoryValueEur": {"zuchtrinder_original": 802390}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"adult_other": 102, "zuchtrinder_original": 80}, "byCategoryValueEur": {"adult_other": 242124, "zuchtrinder_original": 159370}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 864, "zuchtrinder_weitere": 11}, "byCategoryValueEur": {"zuchtrinder_original": 1503547, "zuchtrinder_weitere": 26076}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"zuchtrinder_original": 133, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"zuchtrinder_original": 226361, "zuchtrinder_weitere": 5042}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 1004, "adult_slaughter": 2791, "young_other": 929, "young_slaughter": 34, "zuchtrinder_original": 2244, "zuchtrinder_weitere": 551}, "byCategoryValueEur": {"adult_other": 1097230, "adult_slaughter": 3118587, "young_other": 468994, "young_slaughter": 18453, "zuchtrinder_original": 3339744, "zuchtrinder_weitere": 726738}}, {"code": "DZ", "name": "Algeria", "isEU": false, "byCategory": {"zuchtrinder_original": 980}, "byCategoryValueEur": {"zuchtrinder_original": 2247956}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"young_other": 3504, "zuchtrinder_original": 596, "zuchtrinder_weitere": 1463}, "byCategoryValueEur": {"young_other": 924398, "zuchtrinder_original": 1260624, "zuchtrinder_weitere": 420266}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"adult_other": 1676, "young_other": 300, "zuchtrinder_original": 36}, "byCategoryValueEur": {"adult_other": 3320660, "young_other": 58592, "zuchtrinder_original": 67653}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"zuchtrinder_original": 37, "zuchtrinder_weitere": 9}, "byCategoryValueEur": {"zuchtrinder_original": 45619, "zuchtrinder_weitere": 22130}}, {"code": "GE", "name": "Georgia", "isEU": false, "byCategory": {"zuchtrinder_original": 130}, "byCategoryValueEur": {"zuchtrinder_original": 245220}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"adult_other": 11, "young_other": 800, "zuchtrinder_original": 318, "zuchtrinder_weitere": 38}, "byCategoryValueEur": {"adult_other": 15540, "young_other": 261530, "zuchtrinder_original": 701690, "zuchtrinder_weitere": 20264}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 339, "adult_slaughter": 48, "young_other": 1827, "zuchtrinder_original": 514, "zuchtrinder_weitere": 878}, "byCategoryValueEur": {"adult_other": 401473, "adult_slaughter": 55767, "young_other": 656219, "zuchtrinder_original": 599059, "zuchtrinder_weitere": 251701}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"adult_other": 146, "zuchtrinder_original": 256}, "byCategoryValueEur": {"adult_other": 268521, "zuchtrinder_original": 413431}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 1122, "adult_slaughter": 5030, "young_other": 23960, "young_slaughter": 482, "zuchtrinder_original": 5610, "zuchtrinder_weitere": 3035}, "byCategoryValueEur": {"adult_other": 1278040, "adult_slaughter": 4781619, "young_other": 6580766, "young_slaughter": 454200, "zuchtrinder_original": 11153810, "zuchtrinder_weitere": 1575170}}, {"code": "KZ", "name": "Kazakhstan", "isEU": false, "byCategory": {"zuchtrinder_original": 128}, "byCategoryValueEur": {"zuchtrinder_original": 338370}}, {"code": "ME", "name": "Montenegro", "isEU": false, "byCategory": {"zuchtrinder_original": 461, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"zuchtrinder_original": 969430, "zuchtrinder_weitere": 4000}}, {"code": "MK", "name": "North Macedonia", "isEU": false, "byCategory": {"zuchtrinder_original": 62}, "byCategoryValueEur": {"zuchtrinder_original": 139480}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_slaughter": 56, "young_other": 74, "zuchtrinder_original": 385, "zuchtrinder_weitere": 111}, "byCategoryValueEur": {"adult_slaughter": 65178, "young_other": 19984, "zuchtrinder_original": 700342, "zuchtrinder_weitere": 28747}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_other": 6524, "zuchtrinder_original": 37, "zuchtrinder_weitere": 1580}, "byCategoryValueEur": {"young_other": 1508515, "zuchtrinder_original": 76854, "zuchtrinder_weitere": 390429}}, {"code": "PT", "name": "Portugal", "isEU": true, "byCategory": {"zuchtrinder_weitere": 2}, "byCategoryValueEur": {"zuchtrinder_weitere": 5447}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"young_other": 759, "zuchtrinder_weitere": 55}, "byCategoryValueEur": {"young_other": 154061, "zuchtrinder_weitere": 14388}}, {"code": "RU", "name": "Russia", "isEU": false, "byCategory": {"zuchtrinder_original": 66}, "byCategoryValueEur": {"zuchtrinder_original": 178860}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_slaughter": 102, "young_other": 28, "zuchtrinder_original": 138}, "byCategoryValueEur": {"adult_slaughter": 146585, "young_other": 9451, "zuchtrinder_original": 286369}}, {"code": "SK", "name": "Slovakia", "isEU": true, "byCategory": {"adult_slaughter": 2}, "byCategoryValueEur": {"adult_slaughter": 1601}}, {"code": "TN", "name": "Tunisia", "isEU": false, "byCategory": {"zuchtrinder_original": 254}, "byCategoryValueEur": {"zuchtrinder_original": 576660}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"zuchtrinder_original": 2629, "zuchtrinder_weitere": 32}, "byCategoryValueEur": {"zuchtrinder_original": 4614644, "zuchtrinder_weitere": 131184}}, {"code": "UA", "name": "Ukraine", "isEU": false, "byCategory": {"zuchtrinder_original": 64}, "byCategoryValueEur": {"zuchtrinder_original": 144640}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 887}, "byCategoryValueEur": {"zuchtrinder_original": 1992496}}, {"code": "XK", "name": "Kosovo", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 52000}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 93}, "byCategoryValueEur": {"zuchtrinder_original": 175900}}], "2023": [{"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 123}, "byCategoryValueEur": {"zuchtrinder_original": 325290}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 852}, "byCategoryValueEur": {"zuchtrinder_original": 2730093}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 42}, "byCategoryValueEur": {"zuchtrinder_original": 111340}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"zuchtrinder_original": 10}, "byCategoryValueEur": {"zuchtrinder_original": 22858}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"zuchtrinder_original": 56}, "byCategoryValueEur": {"zuchtrinder_original": 115985}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 582, "zuchtrinder_weitere": 17}, "byCategoryValueEur": {"zuchtrinder_original": 1122731, "zuchtrinder_weitere": 44199}}, {"code": "CY", "name": "Cyprus", "isEU": true, "byCategory": {"adult_other": 63}, "byCategoryValueEur": {"adult_other": 170007}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"zuchtrinder_original": 57, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"zuchtrinder_original": 124396, "zuchtrinder_weitere": 2124}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 1175, "adult_slaughter": 1546, "young_other": 1994, "young_slaughter": 12, "zuchtrinder_original": 3168, "zuchtrinder_weitere": 442}, "byCategoryValueEur": {"adult_other": 1380872, "adult_slaughter": 1701098, "young_other": 644300, "young_slaughter": 12371, "zuchtrinder_original": 4780929, "zuchtrinder_weitere": 608602}}, {"code": "DK", "name": "Denmark", "isEU": true, "byCategory": {"zuchtrinder_original": 617}, "byCategoryValueEur": {"zuchtrinder_original": 1001583}}, {"code": "DZ", "name": "Algeria", "isEU": false, "byCategory": {"zuchtrinder_original": 120}, "byCategoryValueEur": {"zuchtrinder_original": 350834}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"young_other": 3651, "zuchtrinder_original": 336, "zuchtrinder_weitere": 1436}, "byCategoryValueEur": {"young_other": 809738, "zuchtrinder_original": 617406, "zuchtrinder_weitere": 327664}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"adult_other": 4724, "zuchtrinder_original": 54}, "byCategoryValueEur": {"adult_other": 12193979, "zuchtrinder_original": 151816}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"zuchtrinder_original": 53, "zuchtrinder_weitere": 12}, "byCategoryValueEur": {"zuchtrinder_original": 70888, "zuchtrinder_weitere": 31070}}, {"code": "GE", "name": "Georgia", "isEU": false, "byCategory": {"zuchtrinder_original": 65}, "byCategoryValueEur": {"zuchtrinder_original": 146500}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"adult_other": 14, "young_other": 4074, "zuchtrinder_original": 498, "zuchtrinder_weitere": 34}, "byCategoryValueEur": {"adult_other": 25130, "young_other": 1732337, "zuchtrinder_original": 1206077, "zuchtrinder_weitere": 24047}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 1996, "young_other": 2954, "young_slaughter": 191, "zuchtrinder_original": 553, "zuchtrinder_weitere": 1567}, "byCategoryValueEur": {"adult_other": 2268423, "young_other": 1136231, "young_slaughter": 159427, "zuchtrinder_original": 949924, "zuchtrinder_weitere": 768625}}, {"code": "IE", "name": "Ireland", "isEU": true, "byCategory": {"adult_other": 6, "zuchtrinder_original": 114}, "byCategoryValueEur": {"adult_other": 16068, "zuchtrinder_original": 149487}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 1242, "adult_slaughter": 4297, "young_other": 21781, "young_slaughter": 2002, "zuchtrinder_original": 5670, "zuchtrinder_weitere": 2703}, "byCategoryValueEur": {"adult_other": 1621292, "adult_slaughter": 4577869, "young_other": 6858781, "young_slaughter": 1719937, "zuchtrinder_original": 12593637, "zuchtrinder_weitere": 1295043}}, {"code": "ME", "name": "Montenegro", "isEU": false, "byCategory": {"zuchtrinder_original": 342}, "byCategoryValueEur": {"zuchtrinder_original": 889200}}, {"code": "MN", "name": "Mongolia", "isEU": false, "byCategory": {"zuchtrinder_original": 67}, "byCategoryValueEur": {"zuchtrinder_original": 187200}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_other": 23, "adult_slaughter": 198, "zuchtrinder_original": 465, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"adult_other": 14418, "adult_slaughter": 217699, "zuchtrinder_original": 967489, "zuchtrinder_weitere": 8413}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_other": 7146, "zuchtrinder_weitere": 1669}, "byCategoryValueEur": {"young_other": 1841140, "zuchtrinder_weitere": 425512}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"zuchtrinder_original": 146, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 320893, "zuchtrinder_weitere": 10811}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_slaughter": 179, "young_other": 102, "young_slaughter": 10, "zuchtrinder_original": 152, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"adult_slaughter": 308841, "young_other": 62369, "young_slaughter": 7238, "zuchtrinder_original": 372039, "zuchtrinder_weitere": 2955}}, {"code": "SK", "name": "Slovakia", "isEU": true, "byCategory": {"young_other": 14, "zuchtrinder_weitere": 40}, "byCategoryValueEur": {"young_other": 3931, "zuchtrinder_weitere": 10729}}, {"code": "TN", "name": "Tunisia", "isEU": false, "byCategory": {"zuchtrinder_original": 32}, "byCategoryValueEur": {"zuchtrinder_original": 80000}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"zuchtrinder_original": 8978}, "byCategoryValueEur": {"zuchtrinder_original": 24452795}}, {"code": "UZ", "name": "Uzbekistan", "isEU": false, "byCategory": {"zuchtrinder_original": 723}, "byCategoryValueEur": {"zuchtrinder_original": 1685638}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 30}, "byCategoryValueEur": {"zuchtrinder_original": 67500}}], "2024": [{"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 60}, "byCategoryValueEur": {"zuchtrinder_original": 167000}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 657}, "byCategoryValueEur": {"zuchtrinder_original": 2399458}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 116}, "byCategoryValueEur": {"zuchtrinder_original": 289100}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"young_other": 63, "zuchtrinder_weitere": 28}, "byCategoryValueEur": {"young_other": 15455, "zuchtrinder_weitere": 6655}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"zuchtrinder_original": 85, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"zuchtrinder_original": 217076, "zuchtrinder_weitere": 6667}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 639, "zuchtrinder_weitere": 88}, "byCategoryValueEur": {"zuchtrinder_original": 1338909, "zuchtrinder_weitere": 195450}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"adult_other": 1}, "byCategoryValueEur": {"adult_other": 2019}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 568, "adult_slaughter": 1739, "young_other": 493, "young_slaughter": 54, "zuchtrinder_original": 2499, "zuchtrinder_weitere": 375}, "byCategoryValueEur": {"adult_other": 813515, "adult_slaughter": 2121298, "young_other": 238707, "young_slaughter": 39854, "zuchtrinder_original": 3777234, "zuchtrinder_weitere": 583955}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"young_other": 3123, "zuchtrinder_original": 149, "zuchtrinder_weitere": 1571}, "byCategoryValueEur": {"young_other": 1062579, "zuchtrinder_original": 385659, "zuchtrinder_weitere": 562426}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"adult_other": 722, "zuchtrinder_original": 36}, "byCategoryValueEur": {"adult_other": 1963567, "zuchtrinder_original": 121394}}, {"code": "GB", "name": "United Kingdom", "isEU": false, "byCategory": {"zuchtrinder_weitere": 36}, "byCategoryValueEur": {"zuchtrinder_weitere": 71066}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"adult_other": 15, "young_other": 2575, "zuchtrinder_original": 4813, "zuchtrinder_weitere": 7}, "byCategoryValueEur": {"adult_other": 25014, "young_other": 1159291, "zuchtrinder_original": 4053086, "zuchtrinder_weitere": 23686}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 751, "adult_slaughter": 220, "young_other": 1379, "zuchtrinder_original": 2940, "zuchtrinder_weitere": 607}, "byCategoryValueEur": {"adult_other": 953577, "adult_slaughter": 281474, "young_other": 612545, "zuchtrinder_original": 4353857, "zuchtrinder_weitere": 218074}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 875, "adult_slaughter": 4508, "young_other": 23051, "young_slaughter": 578, "zuchtrinder_original": 4516, "zuchtrinder_weitere": 5915}, "byCategoryValueEur": {"adult_other": 1355042, "adult_slaughter": 5357120, "young_other": 8114278, "young_slaughter": 589480, "zuchtrinder_original": 9705256, "zuchtrinder_weitere": 6121944}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_slaughter": 117}, "byCategoryValueEur": {"adult_slaughter": 134591}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_other": 2886, "zuchtrinder_weitere": 521}, "byCategoryValueEur": {"young_other": 933173, "zuchtrinder_weitere": 147415}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"zuchtrinder_original": 224}, "byCategoryValueEur": {"zuchtrinder_original": 257700}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_other": 29, "adult_slaughter": 87, "young_other": 429, "zuchtrinder_original": 91}, "byCategoryValueEur": {"adult_other": 35518, "adult_slaughter": 155537, "young_other": 235677, "zuchtrinder_original": 225963}}, {"code": "SK", "name": "Slovakia", "isEU": true, "byCategory": {"young_other": 87, "zuchtrinder_weitere": 38}, "byCategoryValueEur": {"young_other": 35636, "zuchtrinder_weitere": 13964}}, {"code": "TN", "name": "Tunisia", "isEU": false, "byCategory": {"zuchtrinder_original": 94}, "byCategoryValueEur": {"zuchtrinder_original": 272952}}, {"code": "TR", "name": "Türkiye", "isEU": false, "byCategory": {"zuchtrinder_original": 8382, "zuchtrinder_weitere": 6}, "byCategoryValueEur": {"zuchtrinder_original": 25105037, "zuchtrinder_weitere": 29402}}, {"code": "XS", "name": "Serbia", "isEU": false, "byCategory": {"zuchtrinder_original": 137}, "byCategoryValueEur": {"zuchtrinder_original": 309780}}], "2025": [{"code": "AM", "name": "Armenia", "isEU": false, "byCategory": {"zuchtrinder_original": 90}, "byCategoryValueEur": {"zuchtrinder_original": 310800}}, {"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 592}, "byCategoryValueEur": {"zuchtrinder_original": 2258692}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 297, "zuchtrinder_weitere": 7}, "byCategoryValueEur": {"zuchtrinder_original": 799184, "zuchtrinder_weitere": 30815}}, {"code": "BE", "name": "Belgium", "isEU": true, "byCategory": {"young_other": 180, "zuchtrinder_weitere": 224}, "byCategoryValueEur": {"young_other": 229499, "zuchtrinder_weitere": 682241}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"zuchtrinder_original": 530, "zuchtrinder_weitere": 23}, "byCategoryValueEur": {"zuchtrinder_original": 1292479, "zuchtrinder_weitere": 64904}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 886, "zuchtrinder_weitere": 31}, "byCategoryValueEur": {"zuchtrinder_original": 1972771, "zuchtrinder_weitere": 62765}}, {"code": "CI", "name": "Côte d'Ivoire", "isEU": false, "byCategory": {"zuchtrinder_original": 5}, "byCategoryValueEur": {"zuchtrinder_original": 14375}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"adult_other": 16, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"adult_other": 68366, "zuchtrinder_weitere": 14146}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 915, "adult_slaughter": 1519, "young_other": 1203, "young_slaughter": 306, "zuchtrinder_original": 2476, "zuchtrinder_weitere": 1005}, "byCategoryValueEur": {"adult_other": 1589053, "adult_slaughter": 2463320, "young_other": 1094534, "young_slaughter": 256417, "zuchtrinder_original": 4573078, "zuchtrinder_weitere": 1879325}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"adult_other": 25, "other_unclassified": 4, "young_other": 7736, "zuchtrinder_original": 403, "zuchtrinder_weitere": 3452}, "byCategoryValueEur": {"adult_other": 70192, "other_unclassified": 16987, "young_other": 3684683, "zuchtrinder_original": 903260, "zuchtrinder_weitere": 1705138}}, {"code": "FR", "name": "France", "isEU": true, "byCategory": {"zuchtrinder_original": 8}, "byCategoryValueEur": {"zuchtrinder_original": 24866}}, {"code": "GE", "name": "Georgia", "isEU": false, "byCategory": {"zuchtrinder_original": 30}, "byCategoryValueEur": {"zuchtrinder_original": 96000}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"adult_other": 45, "young_other": 5949, "young_slaughter": 2728, "zuchtrinder_original": 728, "zuchtrinder_weitere": 73}, "byCategoryValueEur": {"adult_other": 29288, "young_other": 3158417, "young_slaughter": 1395555, "zuchtrinder_original": 1762932, "zuchtrinder_weitere": 191766}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"adult_other": 106, "young_other": 37, "young_slaughter": 65, "zuchtrinder_original": 75}, "byCategoryValueEur": {"adult_other": 146710, "young_other": 38876, "young_slaughter": 93830, "zuchtrinder_original": 228972}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 592, "adult_slaughter": 8919, "young_other": 33858, "young_slaughter": 561, "zuchtrinder_original": 4112, "zuchtrinder_weitere": 5430}, "byCategoryValueEur": {"adult_other": 964376, "adult_slaughter": 14528752, "young_other": 19174807, "young_slaughter": 599296, "zuchtrinder_original": 10860595, "zuchtrinder_weitere": 7930827}}, {"code": "LB", "name": "Lebanon", "isEU": false, "byCategory": {"adult_slaughter": 19, "zuchtrinder_original": 87}, "byCategoryValueEur": {"adult_slaughter": 23750, "zuchtrinder_original": 193895}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_slaughter": 76}, "byCategoryValueEur": {"adult_slaughter": 140445}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_other": 118, "young_slaughter": 2135}, "byCategoryValueEur": {"young_other": 80910, "young_slaughter": 1654416}}, {"code": "RO", "name": "Romania", "isEU": true, "byCategory": {"zuchtrinder_original": 379}, "byCategoryValueEur": {"zuchtrinder_original": 427915}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_other": 119, "young_other": 596, "young_slaughter": 242, "zuchtrinder_original": 56}, "byCategoryValueEur": {"adult_other": 193620, "young_other": 441621, "young_slaughter": 240654, "zuchtrinder_original": 176647}}, {"code": "TN", "name": "Tunisia", "isEU": false, "byCategory": {"zuchtrinder_original": 126}, "byCategoryValueEur": {"zuchtrinder_original": 388778}}, {"code": "XK", "name": "Kosovo", "isEU": false, "byCategory": {"zuchtrinder_original": 198}, "byCategoryValueEur": {"zuchtrinder_original": 445680}}], "2026": [{"code": "AZ", "name": "Azerbaijan", "isEU": false, "byCategory": {"zuchtrinder_original": 523}, "byCategoryValueEur": {"zuchtrinder_original": 1960350}}, {"code": "BA", "name": "Bosnia and Herzegovina", "isEU": false, "byCategory": {"zuchtrinder_original": 161, "zuchtrinder_weitere": 3}, "byCategoryValueEur": {"zuchtrinder_original": 454090, "zuchtrinder_weitere": 32410}}, {"code": "BG", "name": "Bulgaria", "isEU": true, "byCategory": {"zuchtrinder_original": 227, "zuchtrinder_weitere": 1}, "byCategoryValueEur": {"zuchtrinder_original": 537971, "zuchtrinder_weitere": 4316}}, {"code": "CH", "name": "Switzerland", "isEU": false, "byCategory": {"zuchtrinder_original": 690, "zuchtrinder_weitere": 24}, "byCategoryValueEur": {"zuchtrinder_original": 1765367, "zuchtrinder_weitere": 70257}}, {"code": "CZ", "name": "Czechia", "isEU": true, "byCategory": {"zuchtrinder_weitere": 18}, "byCategoryValueEur": {"zuchtrinder_weitere": 72049}}, {"code": "DE", "name": "Germany", "isEU": true, "byCategory": {"adult_other": 348, "adult_slaughter": 605, "young_other": 323, "young_slaughter": 10, "zuchtrinder_original": 1007, "zuchtrinder_weitere": 490}, "byCategoryValueEur": {"adult_other": 703801, "adult_slaughter": 1066616, "young_other": 369503, "young_slaughter": 14064, "zuchtrinder_original": 2069492, "zuchtrinder_weitere": 1296897}}, {"code": "ES", "name": "Spain", "isEU": true, "byCategory": {"young_other": 324, "zuchtrinder_original": 196, "zuchtrinder_weitere": 470}, "byCategoryValueEur": {"young_other": 166189, "zuchtrinder_original": 485879, "zuchtrinder_weitere": 455603}}, {"code": "HR", "name": "Croatia", "isEU": true, "byCategory": {"young_other": 2132, "young_slaughter": 605, "zuchtrinder_original": 196, "zuchtrinder_weitere": 28}, "byCategoryValueEur": {"young_other": 1505934, "young_slaughter": 501174, "zuchtrinder_original": 599651, "zuchtrinder_weitere": 56031}}, {"code": "HU", "name": "Hungary", "isEU": true, "byCategory": {"zuchtrinder_original": 19}, "byCategoryValueEur": {"zuchtrinder_original": 82496}}, {"code": "IT", "name": "Italy", "isEU": true, "byCategory": {"adult_other": 251, "adult_slaughter": 4342, "young_other": 19876, "young_slaughter": 1802, "zuchtrinder_original": 1713, "zuchtrinder_weitere": 3745}, "byCategoryValueEur": {"adult_other": 462487, "adult_slaughter": 7617092, "young_other": 13613621, "young_slaughter": 1551269, "zuchtrinder_original": 4738497, "zuchtrinder_weitere": 5040033}}, {"code": "NL", "name": "Netherlands", "isEU": true, "byCategory": {"adult_slaughter": 64, "young_other": 1, "zuchtrinder_original": 1, "zuchtrinder_weitere": 2}, "byCategoryValueEur": {"adult_slaughter": 126401, "young_other": 713, "zuchtrinder_original": 2037, "zuchtrinder_weitere": 7028}}, {"code": "PE", "name": "Peru", "isEU": false, "byCategory": {"zuchtrinder_original": 7}, "byCategoryValueEur": {"zuchtrinder_original": 71598}}, {"code": "PL", "name": "Poland", "isEU": true, "byCategory": {"young_slaughter": 4422, "zuchtrinder_original": 158}, "byCategoryValueEur": {"young_slaughter": 3715359, "zuchtrinder_original": 436648}}, {"code": "SI", "name": "Slovenia", "isEU": true, "byCategory": {"adult_slaughter": 25, "young_slaughter": 196, "zuchtrinder_original": 20, "zuchtrinder_weitere": 5}, "byCategoryValueEur": {"adult_slaughter": 68054, "young_slaughter": 248187, "zuchtrinder_original": 59834, "zuchtrinder_weitere": 13068}}, {"code": "TN", "name": "Tunisia", "isEU": false, "byCategory": {"zuchtrinder_original": 283}, "byCategoryValueEur": {"zuchtrinder_original": 941290}}, {"code": "XK", "name": "Kosovo", "isEU": false, "byCategory": {"zuchtrinder_original": 66}, "byCategoryValueEur": {"zuchtrinder_original": 157600}}]};
+   let years = ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"];
+   // {code, name} for every reporter this project has a pipeline for
+   // (see scripts/countries.py's REPORTERS) -- populates the dropdown.
+   const REPORTERS = [{"code": "AT", "name": "Austria"}, {"code": "DE", "name": "Germany"}, {"code": "IE", "name": "Ireland"}, {"code": "ES", "name": "Spain"}, {"code": "FR", "name": "France"}, {"code": "NL", "name": "Netherlands"}];
+   // {key, label, categories} for the five single-select category views --
+   // see scripts/product_categories.py's VIEWS for the full reasoning.
+   const VIEWS = [{"key": "all", "label": "All", "categories": ["zuchtrinder_original", "zuchtrinder_weitere", "young_slaughter", "young_other", "adult_slaughter", "adult_other", "other_unclassified"]}, {"key": "calves", "label": "Calves (<=300kg)", "categories": ["young_slaughter", "young_other"]}, {"key": "slaughter", "label": "For slaughter", "categories": ["young_slaughter", "adult_slaughter"]}, {"key": "breeding", "label": "For breeding", "categories": ["zuchtrinder_original", "zuchtrinder_weitere"]}, {"key": "production", "label": "For production/rearing", "categories": ["young_other", "adult_other"]}];
+   // Austria's data never needs re-fetching once the page has loaded --
+   // switching back to it just restores this snapshot, taken before
+   // anything above is ever reassigned.
+   const austriaData = { partnersByYear, years };
+
+   // ====== Colours / styling ======
+   const css = getComputedStyle(document.documentElement);
+   const TURQ = css.getPropertyValue('--turq').trim();
+   const GRID = css.getPropertyValue('--grid').trim();
+   const TEXT = css.getPropertyValue('--muted').trim();
+
+   const fmt = new Intl.NumberFormat('en-GB');
+   // No decimal places -- these are large trade totals (thousands to
+   // millions of euros), where cents would just be visual noise.
+   const fmtEur = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+
+   function rgba(hex, a){
+     const h = hex.replace('#','');
+     const r = parseInt(h.slice(0,2),16);
+     const g = parseInt(h.slice(2,4),16);
+     const b = parseInt(h.slice(4,6),16);
+     return `rgba(${r},${g},${b},${a})`;
+   }
+
+   // ========================================================================
+   // Filter state
+   // ========================================================================
+
+   // Which category view (the five radios under #categoryFilter -- All /
+   // Calves / For slaughter / For breeding / For production-rearing --
+   // see product_categories.py's VIEWS), which geography (all/EU/non-EU),
+   // and which unit ("animals" -- head count, or "eur" -- trade value) are
+   // currently selected. Every chart re-reads all three on every change.
+   let selectedCategories = new Set(VIEWS.find(v => v.key === 'all').categories);
+   let geoFilter = 'all';
+   let unitMode = 'animals';
+
+   document.querySelectorAll('#unitToggle .unitToggleBtn').forEach(btn => {
+     btn.addEventListener('click', () => {
+       if (btn.classList.contains('active')) return;
+       unitMode = btn.dataset.unit;
+       document.querySelectorAll('#unitToggle .unitToggleBtn').forEach(b => b.classList.toggle('active', b === btn));
+       renderAll();
+     });
+   });
+
+   document.querySelectorAll('#categoryFilter .viewRadio').forEach(radio => {
+     radio.addEventListener('change', () => {
+       recomputeCategories();
+       renderAll();
+     });
+   });
+
+   document.querySelectorAll('#geoFilter input[name="geo"]').forEach(radio => {
+     radio.addEventListener('change', () => {
+       geoFilter = radio.value;
+       renderAll();
+     });
+   });
+
+   function recomputeCategories(){
+     const checked = document.querySelector('#categoryFilter .viewRadio:checked');
+     const view = VIEWS.find(v => v.key === checked.value);
+     selectedCategories = new Set(view.categories);
+   }
+
+   function partnerMatchesGeo(partner){
+     if (geoFilter === 'all') return true;
+     return geoFilter === 'eu' ? partner.isEU : !partner.isEU;
+   }
+
+   // Sums only the currently-selected categories for one partner, reading
+   // from byCategory (head count) or byCategoryValueEur (trade value)
+   // depending on unitMode -- everything downstream (both charts, the
+   // tooltip, the axis) just calls this and doesn't need to know which
+   // unit is active.
+   function quantityForPartner(partner){
+     const source = unitMode === 'eur' ? partner.byCategoryValueEur : partner.byCategory;
+     let sum = 0;
+     selectedCategories.forEach(cat => { sum += (source && source[cat]) || 0; });
+     return sum;
+   }
+
+   // Formats a number for display, honouring the current unit -- plain
+   // "12,345 animals" or a proper "€12,345" currency string.
+   function formatUnit(value){
+     return unitMode === 'eur' ? fmtEur.format(value) : `${fmt.format(value)} animals`;
+   }
+
+   // Same number, but without the "animals" suffix -- for axis tick
+   // labels, which already sit next to an axis title saying what they are.
+   function formatUnitShort(value){
+     return unitMode === 'eur' ? fmtEur.format(value) : fmt.format(value);
+   }
+
+   function axisTitle(){
+     return unitMode === 'eur' ? 'Trade value (€)' : 'Number of animals';
+   }
+
+   function datasetLabel(){
+     return unitMode === 'eur' ? 'Export value' : 'Animals exported';
+   }
+
+   function totalForYear(year){
+     return (partnersByYear[year] || [])
+       .filter(partnerMatchesGeo)
+       .reduce((sum, p) => sum + quantityForPartner(p), 0);
+   }
+
+   function topPartnersForYear(year, limit = 10){
+     return (partnersByYear[year] || [])
+       .filter(partnerMatchesGeo)
+       .map(p => ({ name: p.name, quantity: quantityForPartner(p) }))
+       .filter(p => p.quantity > 0)
+       .sort((a, b) => b.quantity - a.quantity)
+       .slice(0, limit);
+   }
+
+   // ====== Chart 1: yearly exports (click a bar to select the year) ======
+   // "let" instead of "const" because this value changes as soon as
+   // another bar is clicked (see selectYear() further below).
+   let selectedYear = years[years.length - 1];
+
+   const partnersTitle = document.getElementById('partnersTitle');
+   partnersTitle.textContent = `Top destination countries, ${selectedYear}`;
+
+   // Returns a colour for every year: full opacity for the currently
+   // selected year, dimmed (35%) for all others.
+   function colorsForSelection(){
+     return years.map(y => y === selectedYear ? TURQ : rgba(TURQ, 0.35));
+   }
+
+   const yearlyCtx = document.getElementById('yearlyChart');
+   const yearlyChart = new Chart(yearlyCtx, {
+     type: 'bar',
+     data: {
+       labels: years,
+       datasets: [
+         {
+           label: datasetLabel(),
+           data: years.map(totalForYear),
+           backgroundColor: colorsForSelection(),
+           hoverBackgroundColor: rgba(TURQ, 0.95),
+           borderRadius: 0,
+           borderSkipped: false,
+           barPercentage: 0.85,
+           categoryPercentage: 0.72
+         }
+       ]
+     },
+     options: {
+       responsive: true,
+       maintainAspectRatio: false,
+       interaction: { mode: 'nearest', intersect: true },
+       onClick: (evt, elements) => {
+         if (!elements.length) return;
+         selectYear(years[elements[0].index]);
+       },
+       onHover: (evt, elements) => {
+         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+       },
+       plugins: {
+         legend: { display: false },
+         // formatUnit() is called fresh every time Chart.js needs a
+         // tooltip label, so this always reflects whichever unit is
+         // active right now -- no need to touch this callback itself
+         // when the toggle changes, only re-run chart.update().
+         tooltip: {
+           callbacks: {
+             label: (c) => formatUnit(c.raw)
+           }
+         }
+       },
+       scales: {
+         x: { ticks: { color: TEXT }, grid: { color: GRID } },
+         y: {
+           beginAtZero: true,
+           ticks: { color: TEXT, callback: v => formatUnitShort(v) },
+           grid: { color: GRID },
+           title: { display: true, text: axisTitle(), color: TEXT }
+         }
+       }
+     }
+   });
+
+   // ====== Chart 2: top destination countries for the selected year ======
+   const partnersCtx = document.getElementById('partnersChart');
+
+   const initial = topPartnersForYear(selectedYear);
+   const partnersChart = new Chart(partnersCtx, {
+     type: 'bar',
+     data: {
+       labels: initial.map(r => r.name),
+       datasets: [{
+         label: datasetLabel(),
+         data: initial.map(r => r.quantity),
+         backgroundColor: TURQ,
+         hoverBackgroundColor: rgba(TURQ, 0.95),
+         borderRadius: 0,
+         borderSkipped: false,
+         barPercentage: 0.8,
+         categoryPercentage: 0.7
+       }]
+     },
+     options: {
+       indexAxis: 'y',
+       responsive: true,
+       maintainAspectRatio: false,
+       plugins: {
+         legend: { display: false },
+         tooltip: {
+           callbacks: {
+             label: (c) => formatUnit(c.raw)
+           }
+         }
+       },
+       scales: {
+         x: {
+           beginAtZero: true,
+           ticks: { color: TEXT, callback: v => formatUnitShort(v) },
+           grid: { color: GRID }
+         },
+         y: { ticks: { color: TEXT }, grid: { display: false } }
+       }
+     }
+   });
+
+   // Called when a bar in the top chart is clicked (wired up via onClick
+   // above), or when a filter (category/geography/unit) changes. Redraws
+   // both charts from the current selectedYear + filter state, and
+   // refreshes the parts of each chart's own config that depend on which
+   // unit is selected (dataset label, y-axis title) -- everything else
+   // (tooltip text, axis tick text) reads unitMode live through
+   // formatUnit()/formatUnitShort() and needs no extra update here.
+   function renderAll(){
+     // Reset every time (not just at chart creation) -- switchReporter()
+     // further down can swap "years" out for a different array entirely,
+     // and Chart.js only ever sees whatever was last assigned to its own
+     // data.labels, not the live "years" variable itself.
+     yearlyChart.data.labels = years;
+     yearlyChart.data.datasets[0].data = years.map(totalForYear);
+     yearlyChart.data.datasets[0].backgroundColor = colorsForSelection();
+     yearlyChart.data.datasets[0].label = datasetLabel();
+     yearlyChart.options.scales.y.title.text = axisTitle();
+     yearlyChart.update();
+
+     const rows = topPartnersForYear(selectedYear);
+     partnersChart.data.labels = rows.map(r => r.name);
+     partnersChart.data.datasets[0].data = rows.map(r => r.quantity);
+     partnersChart.data.datasets[0].label = datasetLabel();
+     partnersChart.update();
+     partnersTitle.textContent = `Top destination countries, ${selectedYear}`;
+   }
+
+   function selectYear(year){
+     selectedYear = year;
+     renderAll();
+   }
+
+   // ========================================================================
+   // Reporter picker -- switch which country's own trade declarations the
+   // whole page shows. Austria's data is already sitting in memory
+   // (austriaData, snapshotted above); every other reporter's data lives
+   // in its own public/data/index/<code>.js file, loaded on demand.
+   //
+   // That file is loaded via a <script src> tag, not fetch() -- these
+   // pages are meant to work when opened directly as a local file
+   // (double-click, no server), and a plain fetch() of a relative path is
+   // blocked by the browser under the file:// protocol (confirmed: it
+   // throws "Failed to fetch", since file:// is treated as an opaque
+   // origin for CORS purposes). A <script src> tag isn't subject to that
+   // restriction, so each data file just assigns itself onto
+   // window.REPORTER_DATA instead of being valid standalone JSON -- see
+   // build_dashboard.py's main() for exactly what it writes.
+   // ========================================================================
+
+   window.REPORTER_DATA = window.REPORTER_DATA || {};
+   const reporterSelect = document.getElementById('reporterSelect');
+   const reporterNameInTitle = document.getElementById('reporterNameInTitle');
+   const reporterNameInFooter = document.getElementById('reporterNameInFooter');
+   let currentReporter = 'AT';
+   // Tracks the country the user most recently asked for, even while its
+   // data is still loading -- so if they pick a second country before the
+   // first one's script tag finishes, the first one's late-arriving onload
+   // can tell it's stale and skip applying itself instead of clobbering
+   // the second (real) choice.
+   let pendingReporter = 'AT';
+
+   REPORTERS.forEach(r => {
+     const opt = document.createElement('option');
+     opt.value = r.code;
+     opt.textContent = r.name;
+     reporterSelect.appendChild(opt);
+   });
+   reporterSelect.value = currentReporter;
+
+   // Keep every tab-bar link (Yearly Exports/Map/Monthly/Export vs. Import)
+   // pointing at the currently-selected reporter, so clicking between tabs
+   // carries the choice along in the URL itself (e.g. "map.html?reporter=IE").
+   // This is the primary persistence mechanism -- it works in every browser.
+   // localStorage alone isn't enough: it turned out NOT to be shared across
+   // file:// pages in Firefox (each local file gets its own isolated origin
+   // there), even though it is in Chromium/Edge, which is what an earlier
+   // test happened to confirm against before this gap was found.
+   function updateTabLinksForReporter(code = currentReporter){
+     // Always include ?reporter=, even for Austria -- omitting it for the
+     // default case seemed tidier, but it meant a destination page had no
+     // URL instruction to go on and fell back to ITS OWN localStorage,
+     // which (in Firefox, where each file:// page's storage is isolated)
+     // could still be holding some other country from an earlier visit.
+     // Always stamping the param means every navigation is self-contained
+     // and never depends on storage at all.
+     document.querySelectorAll('a.siteTabBtn[href]').forEach(a => {
+       const base = a.getAttribute('href').split('?')[0];
+       a.setAttribute('href', `${base}?reporter=${code}`);
+     });
+   }
+   updateTabLinksForReporter();
+
+   // Restore whichever reporter was last picked. The URL's own ?reporter=
+   // param (carried over by the tab links above) is checked first since it
+   // works in every browser; localStorage is the fallback, useful in
+   // Chromium-based browsers for e.g. a retyped address-bar URL with no
+   // query string. Guarded so a stale/invalid value (an old bookmark, a
+   // different project reusing the key, browser weirdness) can't leave the
+   // page stuck trying to load a reporter that was never a real option.
+   try {
+     const fromUrl = new URLSearchParams(location.search).get('reporter');
+     const stored = fromUrl || localStorage.getItem('reporterCountry');
+     if (stored && stored !== currentReporter && REPORTERS.some(r => r.code === stored)){
+       reporterSelect.value = stored;
+       switchReporter(stored);
+     }
+   } catch (e) {
+     // localStorage unavailable (private browsing, disabled storage,
+     // etc.) -- the ?reporter= URL param above still works regardless.
+   }
+
+   reporterSelect.addEventListener('change', () => switchReporter(reporterSelect.value));
+
+   function switchReporter(code){
+     // Update the tab links to the target country right away, rather than
+     // waiting for its data to finish loading (that happens async, in
+     // applyReporterData() below) -- otherwise clicking a tab quickly right
+     // after picking a not-yet-cached country would still carry the OLD
+     // ?reporter= value, since the rewrite hadn't happened yet. If the load
+     // ends up failing and falls back to Austria, applyReporterData('AT', ...)
+     // corrects the links back to plain URLs, so this can't leave them wrong.
+     updateTabLinksForReporter(code);
+     pendingReporter = code;
+     if (code === 'AT'){
+       applyReporterData('AT', austriaData);
+       return;
+     }
+     if (window.REPORTER_DATA[code]){
+       applyReporterData(code, window.REPORTER_DATA[code]);
+       return;
+     }
+
+     // Not loaded yet -- inject the script tag. Its onload calls back in
+     // here once window.REPORTER_DATA[code] actually exists; if the file
+     // is genuinely missing (a reporter listed in REPORTERS that hasn't
+     // been fetched yet), onerror falls back to Austria rather than
+     // leaving the page stuck showing a country it has no data for. Both
+     // callbacks bail out if the user has since picked something else
+     // (pendingReporter moved on) while this one was still in flight.
+     const script = document.createElement('script');
+     script.src = `data/index/${code.toLowerCase()}.js`;
+     script.onload = () => {
+       if (pendingReporter !== code) return;
+       applyReporterData(code, window.REPORTER_DATA[code]);
+     };
+     script.onerror = () => {
+       if (pendingReporter !== code) return;
+       alert(`No data available yet for that country -- showing Austria instead.`);
+       reporterSelect.value = 'AT';
+       switchReporter('AT');
+     };
+     document.head.appendChild(script);
+   }
+
+   function applyReporterData(code, data){
+     currentReporter = code;
+     partnersByYear = data.partnersByYear;
+     years = data.years;
+     selectedYear = years[years.length - 1];
+
+     const name = (REPORTERS.find(r => r.code === code) || {}).name || code;
+     reporterNameInTitle.textContent = name;
+     reporterNameInFooter.textContent = name;
+
+     try { localStorage.setItem('reporterCountry', code); } catch (e) { /* see above */ }
+     updateTabLinksForReporter();
+
+     renderAll();
+   }
+</script>
+</body>
+</html>
