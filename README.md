@@ -98,8 +98,23 @@ functions, which would just be testing that the internet works.
 
 ## Automated refresh / hosting
 
-`.github/workflows/refresh.yml` runs `scripts/refresh_all.py` daily and
-deploys straight to GitHub Pages via the official deploy-pages action —
-nothing gets committed back to the repo on a scheduled run, it just
-re-fetches fresh and republishes. Requires, one time, in this repo's
-GitHub settings: **Settings → Pages → Source → GitHub Actions**.
+`.github/workflows/refresh.yml` runs `scripts/refresh_all.py` on the 1st
+and 15th of each month and deploys straight to GitHub Pages via the
+official deploy-pages action — nothing gets committed back to the repo on
+a scheduled run, it just re-fetches fresh and republishes. Requires, one
+time, in this repo's GitHub settings: **Settings → Pages → Source →
+GitHub Actions**.
+
+## Sharing a snapshot directly (not via the live link)
+
+```
+python scripts/make_share_bundle.py
+```
+
+Copies the finished pages (everything except `*.template.html` source
+files and `mirror.html`, the internal QA tool) plus their data files into
+`public_share/` — a clean, self-contained folder. Zip it and send it;
+every page still works opened directly (double-click `index.html`), no
+server or live link needed on the recipient's end. Regenerate it after
+every data refresh you want to share — it's disposable build output
+(gitignored), not something to keep committed.

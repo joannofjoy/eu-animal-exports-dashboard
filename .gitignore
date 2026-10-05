@@ -26,6 +26,11 @@ data/raw/
 data/processed/
 data/debug/
 
+# scripts/make_share_bundle.py's output -- a disposable copy of already-
+# tracked public/ files, regenerated on demand whenever a fresh folder is
+# needed to zip and send to the team.
+public_share/
+
 # OS
 .DS_Store
 Thumbs.db
