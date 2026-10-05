@@ -14,16 +14,15 @@ name: Refresh data and deploy
 
 on:
   schedule:
-    # 03:11 UTC every day -- an off-the-hour minute, not :00, so this
-    # doesn't line up with the exact moment thousands of other repos'
-    # cron jobs also fire (a real GitHub Actions recommendation, not
-    # superstition: jobs scheduled for :00 queue up behind each other and
-    # can run late). "Every couple of days" was the ask; daily is simpler
-    # to reason about than an every-other-day cron expression and GitHub
-    # Actions' free tier has no problem absorbing a two-minute job once a
-    # day, so there's no real cost to running it more often than strictly
-    # asked for.
-    - cron: '11 3 * * *'
+    # 03:11 UTC on the 1st and 15th of each month -- roughly every two
+    # weeks (14-17 days apart depending on the month, not exactly 14,
+    # since cron has no native "every N weeks" field). Chosen over a
+    # once-a-week-skip-every-other-week workaround since this needs no
+    # extra logic in the job itself -- just two fixed dates. The minute
+    # (:11, not :00) is a real GitHub Actions recommendation, not
+    # superstition: jobs scheduled for the exact top of the hour queue up
+    # behind thousands of other repos' cron jobs and can run late.
+    - cron: '11 3 1,15 * *'
   # Lets you (or a future agent) trigger a refresh on demand from the
   # GitHub UI/API, e.g. right after fixing a bug, instead of waiting for
   # the next scheduled run.
