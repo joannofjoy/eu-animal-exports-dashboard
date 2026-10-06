@@ -24,23 +24,9 @@ See also, for earlier/narrower context:
 
 ## 1. Architecture, in one paragraph
 
-Pure static site. `scripts/fetch_*.py` hit the live Eurostat Comext SDMX
-API and write raw CSVs to `data/raw/`; `scripts/build_*.py` read
-`data/processed/` CSVs, do zero network I/O, and fill `__PLACEHOLDER__`
-tokens in `public/*.template.html` to produce the real `public/*.html`
-files. Never edit a `.html` file directly — it gets silently overwritten
-next build. No server, no database; pages are meant to work opened
-directly via `file://` (double-click), which has shaped several decisions
-below. Run `.venv/Scripts/python.exe -m ruff check .` and `-m pytest -q`
-before considering any change done — both must be clean.
+Pure static site. `scripts/fetch_*.py` fetch data from Eurostat and write raw CSVs to `data/raw/`; `scripts/build_*.py` read `data/processed/` CSVs without network access and generate the dashboard HTML from matching templates. `public/methodology.html` is maintained directly as a static reader page. No server or database is required. Dashboard pages are intended to work both hosted and opened through `file://`; the selected reporter is loaded from a relative JavaScript data file to preserve that support.
 
-Six reader-facing-ish pages, all built from their own `build_*.py` +
-`*.template.html` pair: `index` (Yearly Exports), `map`, `monthly`,
-`trade_pairs` (Export vs. Import), `dashboard` (Combined View — built but
-deliberately **not linked** in the site nav, see `site_nav.py`), `mirror`
-(Mirror Statistics — internal dev/QA tool, styled as muted/italic in the
-nav, not a finished reader-facing dashboard).
-
+Reader dashboards: `index` (Yearly Exports), `map`, `monthly`, and `trade_pairs` (Export vs. Import). `dashboard` is a combined view that is built but not linked in reader navigation. `mirror` is an internal QA tool and is not linked in reader navigation or copied into share bundles. `methodology.html` is the reader-facing page for source, definitions and caveats. Keep technical history and exploratory findings in `docs/`.
 Multi-reporter support: Austria (`AT`) plus five more EU countries
 (`DE`, `IE`, `ES`, `FR`, `NL`) — see `scripts/countries.py`'s `REPORTERS`.
 Austria's data is baked directly into each page at build time; every other
@@ -340,9 +326,226 @@ designs across the project's life; **only the third is current**:
   a final deliverable. If resumed, section 6's findings on weight-bracket
   imprecision should temper how confidently any veal/beef framing is
   applied to it.
-- No automated data refresh exists (same gap `progress_notes.md` flagged
-  in the PHP era) — `fetch_at_history.py`/`fetch_at_imports.py` are manual
-  runs, one per reporter. 2026's figures aren't in yet as of this writing.
+- Automated refresh/deploy now exists in `.github/workflows/refresh.yml`;
+  it runs `scripts/refresh_all.py` twice monthly, stages reader-facing
+  files with `scripts/make_deploy_site.py`, and publishes `site_dist/` to
+  GitHub Pages. First publication still requires Pages to be configured in
+  repository settings. This supersedes the PHP-era manual-refresh note in
+  `progress_notes.md`.
+- Reader-facing “Project notes (work in progress)” have been removed from
+  the dashboards. Use `public/methodology.html` for published definitions
+  and caveats; keep investigations and implementation history in `docs/`.
+- The internal mirror tool remains buildable for QA but is omitted from the
+  reader navigation and sharing bundle.
 - Only tested in Chromium/Edge (via CDP) and, for the persistence bug
   specifically, debugged against real user reports from Firefox. Safari
   is untested.
+
+## 11. Handoff checkpoint — 2026-10-05
+
+The user asked to modernize the public dashboard UI, remove internal notes from reader pages, retain The Marker colors, prepare it for deployment, and audit the data pipeline. Work is staged locally for handoff; **nothing has been committed, pushed, or published**.
+
+- Preserved the existing palette (`#E64980`, `#6FB2A5`, `#31688F`, `#6D3D83`, near-black/off-white). Added CSS polish in all `public/*.template.html` files and matching styling to hand-maintained `public/methodology.html`: clearer card grouping, navigation and control hierarchy, spacing, rounded surfaces, responsive mobile layout, visible keyboard focus and reduced-motion support. Generated pages have been rebuilt. No visual browser screenshot review has been done in this last UI turn; next agent should inspect in a browser at desktop and mobile sizes before treating the design as final.
+- Reader methodology is at `public/methodology.html`; internal/research notes remain in `docs/`. Deployment staging output is `site_dist/` (5 reader pages plus 4 data folders); share bundle output is `public_share/` (6 HTML pages and data). Both were regenerated after the UI changes. They are generated/ignored output, not source.
+- The prior data audit checked cached raw data for six reporters (AT/DE/IE/ES/FR/NL), both trade flows, 2015–2026. No duplicate raw coordinates, null observation values, measure-pair gaps, or unexpected product codes were found; recomputed yearly/monthly aggregates matched processed outputs. This was a cached-data audit, **not a fresh live Eurostat retrieval**. Latest cached period reached July 2026 with reporter/flow availability varying.
+- Fixes from that audit: API response validation now catches empty/incomplete/malformed observations in `scripts/fetch_at_history.py`; category validation prevents silent omission of unrecognized CN8 codes in `scripts/product_categories.py` and the build loaders; `scripts/build_map.py` maps Natural Earth `RS` geometry to Eurostat partner code `XS` (Serbia); missing partner names were filled in `scripts/countries.py`. Small destinations without separate polygons in the Natural Earth 110m layer cannot be individually shaded, noted for readers in methodology.
+- The previous full test run completed with **44 passed** and Ruff reported clean. Those checks preceded the CSS-only UI turn. In that turn all builders completed, all generated reader pages were checked for style insertion and unresolved navigation placeholders, and `git diff --check` passed. No tests were run during the CSS turn.
+- Existing working tree includes a mix of this earlier UI/methodology/data-audit work and previously requested note cleanup/deployment preparation. Inspect `git status` and `git diff` before staging any subset; do not assume all modified generated/data JS files are UI-only. The user's earlier instruction was not to commit or push without being asked. No paid services; direct `file://` support remains a requirement.
+
+Useful rebuild commands from the project root:
+
+```
+python scripts/build_dashboard.py
+python scripts/build_map.py
+python scripts/build_monthly.py
+python scripts/build_trade_pairs.py
+python scripts/build_site.py
+python scripts/make_deploy_site.py
+```
+
+`public/methodology.html` is hand-maintained. `scripts/refresh_all.py` performs a live API fetch, so do not use it merely to rebuild UI output.
+
+## 12. Handoff checkpoint — 2026-10-05 (resuming after the above)
+
+Picked this project back up after the agent whose checkpoint is section 11
+worked on it. Reviewed their changes file-by-file before touching anything
+further (don't just trust a handoff note's self-description — verify):
+
+- **`validate_api_response()`** (`fetch_at_history.py`) and
+  **`validate_product_codes()`** (`product_categories.py`): legitimate,
+  well-reasoned defensive checks. Kept as-is.
+- **Serbia RS/XS map fix** (`build_map.py`): verified independently rather
+  than trusting the claim -- confirmed Austria's own processed data has
+  real `XS` rows (`grep` count: 11) and Natural Earth's boundary file uses
+  `RS` for Serbia's `ISO_A2`/`ISO_A2_EH`. Real bug, correct fix.
+- **`methodology.html` replacing the per-page "Project notes" footer**:
+  a good simplification -- one dedicated page instead of the same
+  collapsible blob repeated on six pages. Content is accurate.
+- **CSS duplication**: the UI-polish pass left every touched file (all
+  four main templates plus `methodology.html`) with its style block
+  effectively written *twice* -- a base layer followed by a full second
+  layer re-declaring `:root`, `body`, `.wrap`, `nav`, etc. with additional/
+  overriding properties, concatenated rather than merged. Harmless (CSS
+  cascade resolves it fine, confirmed via screenshots -- nothing was
+  visually broken), but a real maintainability smell. **Fully consolidated
+  in `methodology.html`** (it was small, 103 lines, already being read in
+  detail for an unrelated check) into one definition per selector, keeping
+  every effective value unchanged. **Not yet done for the four main
+  templates** (`index`/`map`/`monthly`/`trade_pairs.template.html`) --
+  each has materially more of this duplication (100+ lines), and doing it
+  for all four safely needs the same careful one-property-at-a-time
+  reconciliation, not a quick pass. Worth doing, but it's real effort;
+  flagged to the user rather than silently taken on.
+- **Mobile tab bar**: at narrow widths the site-nav tab strip overflows
+  horizontally with no visual affordance (fade, partial-next-tab peek,
+  etc.) hinting that it scrolls -- verified via CDP that it's genuinely
+  scrollable and every tab (including the new "Methodology") is reachable,
+  so nothing is actually lost, but a first-time mobile reader has no cue
+  to try swiping. Minor, not fixed, flagged to the user.
+- **Retired `scripts/make_share_bundle.py`**, which I'd written in an
+  earlier session, in favor of this checkpoint's `make_deploy_site.py` --
+  the two had become near-duplicates (same job, different output folder
+  name and a slightly different page list) once `methodology.html`
+  existed. Keeping one unambiguous script beats maintaining two that could
+  silently drift apart. Updated its docstring to cover both the CI-deploy
+  and share-with-team use cases explicitly, and updated the README and
+  `.gitignore` accordingly.
+- Full lint + test suite verified clean after the other agent's changes
+  (44 passed) and again after the above (same). All five reader pages
+  plus `methodology.html` screenshotted at desktop and mobile widths,
+  zero console errors.
+- Mid-session, also expanded `REPORTERS` (`scripts/countries.py`) from six
+  reporters to all 27 EU member states (Comext only accepts EU members as
+  reporters at all, so this is the real ceiling, not an arbitrary round
+  number) -- verified live that Greece's Comext reporter code is `GR`, not
+  `EL` (which some other Eurostat datasets use for Greece), before adding
+  it. Data fetch for the 21 new reporters was in progress when this note
+  was written; if you're picking this up and don't see ~27 reporters'
+  worth of `public/data/*/XX.js` files, the fetch likely didn't finish --
+  rerun `fetch_at_history.py`/`fetch_at_imports.py --reporter <code>` for
+  whichever are missing, then the four `build_*.py` scripts.
+- **Explicitly flagged by the user as "for later," not yet done:**
+  - `map.html`'s reporting-country styling only gives it a pink outline
+    (`fillColor: NO_DATA_COLOR`, i.e. dark) -- `monthly.html`'s map
+    instead fills it with translucent pink
+    (`fillColor: PINK, fillOpacity: 0.55`). User wants `map.html` to match
+    `monthly.html`'s version. Small, well-scoped fix in `map.template.html`'s
+    `styleFor()` once picked back up.
+  - User wants research into how animal-rights/welfare organizations
+    themselves gather per-country **meat** trade data (processed beef/veal
+    product imports and exports -- CN/HS headings like 0201/0202, fresh
+    or frozen bovine meat) for the veal-vs-beef question. Explicitly
+    *not* livestock/live-animal trade (this project's own DS-045409
+    pipeline, heading 0102, already covers that side) -- the open
+    question is specifically how the *meat* side of the original
+    "live calves exported vs. meat imported" comparison gets tracked,
+    and whether meat-trade data (unlike live-animal Comext data) carries
+    any veal/beef or age distinction that heading 0102 doesn't. Not
+    started; would likely need its own new fetch pipeline against a
+    different Comext heading, not an extension of the existing one.
+
+## 13. Handoff checkpoint — 2026-10-06 (27-reporter fetch completed, real bugs found)
+
+Picked up where section 12 left off: the 21 new reporters' fetch was
+running in the background. It finished, but with real failures worth
+understanding, not just re-running blindly.
+
+- **First pass: 10 fetches failed with `requests.exceptions.ReadTimeout`**
+  (Cyprus export+import, Finland export+import, Greece import, Hungary
+  export, Malta export+import, Sweden export+import). Re-running the exact
+  same 10 fetches immediately: 2 succeeded on bare retry (Greece import,
+  Hungary export -- genuinely transient), but **8 failed again, with a
+  different error**: `validate_api_response()` raising `ValueError:
+  Eurostat returned no observations for <reporter>, <flow>, <year>`.
+- **Root cause, confirmed live against the API, not assumed**: these
+  reporters genuinely have zero observations for specific years -- e.g.
+  queried Sweden's 2022 imports directly and got HTTP 200 with just the
+  CSV header row, no data rows. Small/low-volume reporters (Cyprus,
+  Malta) and specific quiet years (Sweden 2022, current-year-so-far 2026)
+  are a real possible state, not a broken request. The bug: section 11's
+  `validate_api_response()` treated `df.empty` as unconditionally fatal,
+  which aborted the *entire* multi-year `fetch()` call for that
+  reporter/flow -- discarding every other year's real data too, since
+  years only get concatenated after all of them validate successfully.
+  **Fixed** in `fetch_at_history.py`'s `validate_api_response()`: an empty
+  year now prints a note and returns the empty frame as-is (contributes
+  zero rows via `pd.concat`) instead of raising. `fetch_at_imports.py`
+  imports this same function, so one fix covers both. Re-ran the 8
+  affected reporter/flow fetches after the fix -- all succeeded, several
+  with multiple genuinely-empty years logged as notes (Malta's export side
+  is 0 rows for *every* year 2015-2026 -- Malta apparently exports no live
+  cattle at all under heading 0102, imports only).
+- **New partner codes from the wider reporter set**: cross-checked every
+  partner code appearing in any reporter's processed CSVs against
+  `countries.py`'s `COUNTRY_NAMES`, live against Eurostat's `CXT_FREE_ISO`
+  codelist (not guessed) -- 13 were missing. 12 were real countries, added
+  to `COUNTRY_NAMES` (Argentina, Brazil, Bahamas, Congo, Faroe Islands,
+  Iceland, Madagascar, Malaysia, Nigeria, Occupied Palestinian Territory,
+  Uganda, Vietnam). The 13th, `QS`, is Eurostat's own aggregate code
+  ("Stores and provisions within the framework of extra-Union trade"),
+  the same class as the existing `QV`/`QW` entries in
+  `AGGREGATE_PARTNERS` -- added there instead, then re-ran Belgium's
+  export fetch (the only reporter whose data actually contained a `QS`
+  row) to purge it from the aggregated output.
+- **Re-verified the `OTHER_UNCLASSIFIED` zero-volume claim**
+  (`product_categories.py`'s docstring, flagged in section 10/pending list
+  as scoped to "six reporters"): checked the four `>220kg` generic
+  "domestic bovines" codes (`01029031/33/35/37`) against all 27 reporters'
+  full processed data -- still genuinely zero volume everywhere. Docstring
+  updated from "six reporters... 2021-2025" to "27 reporters...
+  2015-2026"; the underlying claim held, just needed the count corrected.
+- **Three real front-end bugs found via live CDP checks on Malta**
+  (the zero-export-data edge case), not from reading the code alone:
+  1. `index.template.html`: `selectedYear = years[years.length - 1]` is
+     `undefined` when `years` is empty, rendering "Top destination
+     countries, undefined" above a meaningless empty 0-1-axis chart.
+     Fixed with a `noDataNote`/`updateNoDataState()` pair that hides both
+     chart panels and shows "No export data has been reported for Malta
+     in this period" instead, wired into both the initial page load and
+     `renderAll()`.
+  2. `map.template.html` and `monthly.template.html` (independent copies
+     of the same logic, no shared module between templates): their
+     `quantileBreaks()` returned `bucketCount - 1` entries of `undefined`
+     for empty input instead of `[]`, because `sortedValues[-1]` silently
+     reads as `undefined` rather than erroring -- so `updateLegend()`'s
+     existing `if (!breaks.length)` "No data for this selection" guard
+     never triggered (length was 4, just full of `undefined`), and the
+     legend rendered "< NaN", "NaN – NaN" etc. instead. Fixed by returning
+     `[]` immediately when `sortedValues` is empty, in both files --
+     this is the actual root cause, and the already-correct "no data"
+     message now reaches the screen as originally intended. Also fixed
+     `map.template.html`'s title (`years[yearSlider.value]` → "undefined"
+     when `years` is empty) to show "no data for this reporter" instead.
+  3. `monthly.template.html`: the year-tab buttons (2015/2016/.../2026)
+     were built **once**, from a bare top-level `years.forEach(...)`, and
+     never rebuilt on reporter switch -- so Malta kept showing Austria's
+     full 12-tab row even though Malta's own `years` array is `[]`,
+     misleadingly implying 12 years of data exist to click through.
+     `applyReporterData()` also never reset `selectedYear`, so it stayed
+     pinned to whatever the previously-viewed reporter's last year was.
+     Fixed by extracting tab-building into `buildYearTabs()` (clears and
+     rebuilds the tab row), called both at initial load and from
+     `applyReporterData()`, which now also resets `selectedYear` to
+     `years.length ? years[years.length - 1] : undefined` on every
+     switch.
+  Verified all three fixes live via CDP: Malta now shows a clear
+  "no data" state with zero console errors on `index.html`, `map.html`,
+  and `monthly.html`; re-verified Austria (the server-baked default) and
+  Poland (a normal, full-data reporter) still render identically to
+  before on all three pages, so the fixes don't regress the common case.
+  `trade_pairs.html` was already fine without any fix -- it blends export
+  and import data per partner and shows explicit "Exported: 0 animals"
+  rather than relying on a possibly-empty `years` array.
+- Full lint + test suite clean throughout (44 passed, ruff clean) --
+  checked after every substantive change, not just once at the end.
+- All six `build_*.py` scripts re-run after every fetch/code change
+  (`build_dashboard.py`, `build_map.py`, `build_monthly.py`,
+  `build_trade_pairs.py`, `build_site.py`, `build_mirror.py`) --
+  `public/` now reflects all 27 reporters with validated data and the
+  three front-end fixes above.
+- Not yet done: none of this session's changes (the 27-reporter data, the
+  `validate_api_response()`/`AGGREGATE_PARTNERS`/`COUNTRY_NAMES` fixes, or
+  the three front-end empty-data fixes) have been committed to git yet.
+  The two "for later" items from section 12 (map.html pink fill to match
+  monthly.html; meat-trade research) are still untouched, as the user
+  asked.

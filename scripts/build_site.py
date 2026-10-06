@@ -23,7 +23,6 @@ from pathlib import Path
 from build_dashboard import load_partners_by_year
 from build_map import build_choropleth_geojson, load_values_by_country
 from product_categories import VIEWS, render_category_filter_html
-from project_notes import render_project_notes_html
 from site_nav import render_site_tabs_html
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -50,7 +49,6 @@ def render(
         "__YEARS_JSON__": json.dumps(years, ensure_ascii=False),
         "__CATEGORY_FILTER_HTML__": render_category_filter_html(),
         "__VIEWS_JSON__": json.dumps(VIEWS, ensure_ascii=False),
-        "__PROJECT_NOTES_HTML__": render_project_notes_html(),
         "__SITE_TABS_HTML__": render_site_tabs_html("dashboard.html"),
     }
     for token, value in replacements.items():

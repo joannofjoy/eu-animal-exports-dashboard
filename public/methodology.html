@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sources, definitions and limitations for The Marker's EU live cattle trade dashboard.">
+  <title>The Marker — Methodology and data</title>
+  <style>
+    /* One consolidated block -- this page started as two separate style
+       passes (a base layer, then a later visual-polish pass) that ended
+       up concatenated rather than merged, with several selectors
+       (:root, body, .wrap, nav, .summary, section, h1, its two
+       max-width:640px media queries) each defined twice. Harmless in
+       practice (CSS cascade just let the later, more specific-looking
+       declaration win), but confusing to maintain -- consolidated here
+       into one definition per selector, keeping every effective
+       (winning) value exactly as it was already rendering. */
+    :root {
+      color-scheme: dark;
+      --bg:#010200; --panel:rgba(255,255,255,.04); --border:rgba(240,238,239,.16);
+      --text:#f0eeef; --muted:rgba(240,238,239,.72); --accent:#6fb2a5;
+      --radius:14px; --shadow:0 12px 32px rgba(0,0,0,.20);
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; color:var(--text); font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;
+      background:radial-gradient(ellipse at 50% -18%,rgba(49,104,143,.17),transparent 42%),var(--bg);
+    }
+    .wrap { max-width:1100px; margin:0 auto; padding:24px clamp(16px,3vw,36px) 56px; }
+    nav { display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid rgba(240,238,239,.12); margin-bottom:32px; }
+    nav a {
+      color:var(--muted); text-decoration:none; font-size:14px; font-weight:600;
+      padding:11px 15px; border-bottom:2px solid transparent; border-radius:9px 9px 0 0;
+      transition:color .16s ease,background .16s ease;
+    }
+    nav a:hover, nav a:focus-visible { color:var(--text); }
+    nav a:hover { background:rgba(240,238,239,.055); }
+    nav [aria-current="page"] { color:var(--accent); border-bottom-color:var(--accent); background:rgba(111,178,165,.10); }
+    h1 { font-size:clamp(32px,5vw,46px); line-height:1.12; letter-spacing:-.025em; margin:0 0 12px; }
+    h2 { font-size:21px; line-height:1.25; margin:0 0 10px; }
+    p { margin:0 0 14px; }
+    .intro { max-width:70ch; color:var(--muted); font-size:18px; line-height:1.6; margin-bottom:28px; }
+    .summary {
+      border-left:3px solid var(--accent); border-radius:var(--radius); box-shadow:var(--shadow);
+      background:linear-gradient(145deg,rgba(111,178,165,.10),rgba(255,255,255,.025));
+      padding:20px 22px; margin:0 0 28px;
+    }
+    .sections { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+    section {
+      padding:22px; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow);
+      background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.025));
+    }
+    section h2 { color:var(--accent); }
+    section p:last-child, section ul:last-child { margin-bottom:0; }
+    ul { margin:0 0 14px; padding-left:22px; }
+    li { margin:0 0 7px; }
+    a { color:var(--accent); text-underline-offset:3px; }
+    a:hover { color:#a5d3ca; }
+    :where(a,button,select,summary):focus-visible { outline:3px solid #E64980; outline-offset:3px; }
+    .sources { margin-top:14px; }
+    .footer { margin-top:28px; padding-top:16px; border-top:1px solid var(--border); color:var(--muted); font-size:13px; }
+    @media (max-width:640px) {
+      .wrap { padding:12px 12px 36px; }
+      .sections { grid-template-columns:1fr; }
+      nav { overflow-x:auto; flex-wrap:nowrap; gap:2px; }
+      nav a { white-space:nowrap; padding:10px 11px; font-size:12px; }
+      .summary, section { padding:16px; border-radius:12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav aria-label="Dashboard pages">
+      <a href="index.html">Yearly Exports</a>
+      <a href="map.html">Map</a>
+      <a href="monthly.html">Monthly</a>
+      <a href="trade_pairs.html">Export vs. Import</a>
+      <a href="methodology.html" aria-current="page">Methodology</a>
+    </nav>
+
+    <main>
+      <h1>Methodology and data</h1>
+      <p class="intro">What the dashboard measures, how to interpret its filters, and where the figures come from.</p>
+
+      <div class="summary">
+        <strong>In brief:</strong> the dashboard uses reported international trade data for live bovine animals. It shows declared animal quantities or trade values; it does not measure farm production, animal movements independently verified on the ground, or market prices.
+      </div>
+
+      <div class="sections">
+        <section>
+          <h2>Source and coverage</h2>
+          <p>Data comes from Eurostat Comext, dataset DS-045409. The dashboard covers all 27 EU member states as reporting countries, with yearly, monthly, destination and bilateral views.</p>
+          <p>The product selection uses active CN8 codes under heading 0102 for live bovine animals, excluding buffalo. Eurostat aggregate partner entries, such as world or EU totals, are excluded where country-level rows are used to avoid double-counting.</p>
+          <p>The map uses a low-resolution world boundary layer. Some small states and territories have no separate polygon, so their trade can appear in country-level views but may not be shaded individually on the map.</p>
+          <p class="sources"><a href="https://ec.europa.eu/eurostat/web/international-trade-in-goods/database">Eurostat international trade in goods database</a></p>
+        </section>
+
+        <section>
+          <h2>Animals and trade value</h2>
+          <p><strong>Animals</strong> uses the supplementary quantity reported with the trade record. <strong>Trade value (€)</strong> uses the declared euro value of the goods. It is a nominal trade value, not a price per animal, profit, or inflation-adjusted measure.</p>
+          <p>The latest calendar year may be incomplete when viewed, since reporting continues through the year. Eurostat can also revise historical records, so later updates may change earlier figures.</p>
+        </section>
+
+        <section>
+          <h2>Product filters</h2>
+          <p>The filter views group customs product codes by their reported description and purpose. “For slaughter,” “for breeding,” and “for production-rearing” describe declared trade categories.</p>
+          <p>“Calves (≤300 kg)” is a weight-based grouping, not an age measure. Comext does not report animal age, and the weight bands cannot reliably distinguish veal from beef.</p>
+        </section>
+
+        <section>
+          <h2>Exports and imports may differ</h2>
+          <p>Export vs. import compares declarations recorded by the reporting country and its selected partner. Timing, valuation, coverage and later revisions can cause the two sides to differ. The difference should not be read on its own as proof of an error or of unrecorded trade.</p>
+          <p>Map colours show the distribution among destinations in the selected year. Use the map information box for the reported total; colour bands are intended to compare destinations within that year.</p>
+        </section>
+      </div>
+
+      <div class="footer">
+        <p>Source: Eurostat Comext, dataset DS-045409. This page summarizes the dashboard’s current definitions and scope.</p>
+        <p>Eurostat may revise trade records after publication, so historical figures can change between dashboard updates.</p>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

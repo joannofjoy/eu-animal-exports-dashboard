@@ -78,6 +78,10 @@ def _fake_boundaries(tmp_path):
                         "properties": {"ISO_A2": "ZZ", "NAME_EN": "Nowhereland"},
                         "geometry": {"type": "Point", "coordinates": [0, 0]},
                     },
+                    {
+                        "properties": {"ISO_A2": "RS", "NAME_EN": "Serbia"},
+                        "geometry": {"type": "Point", "coordinates": [21, 44]},
+                    },
                 ],
             }
         )
@@ -87,7 +91,10 @@ def _fake_boundaries(tmp_path):
 
 def test_build_choropleth_geojson_joins_values_and_marks_exporter(tmp_path):
     boundaries_path = _fake_boundaries(tmp_path)
-    values_by_country = {"DE": {"2015": {"zuchtrinder_original": 100}}}
+    values_by_country = {
+        "DE": {"2015": {"zuchtrinder_original": 100}},
+        "XS": {"2015": {"young_slaughter": 8}},
+    }
 
     geojson = build_choropleth_geojson(values_by_country, boundaries_path)
     by_code = {f["properties"]["code"]: f["properties"] for f in geojson["features"]}
@@ -113,6 +120,11 @@ def test_build_choropleth_geojson_joins_values_and_marks_exporter(tmp_path):
     assert by_code["ZZ"]["name"] == "Nowhereland"
     assert by_code["ZZ"]["isEU"] is False
     assert "values" not in by_code["ZZ"]
+
+    # Eurostat uses XS for Serbia while Natural Earth uses RS. The alias
+    # must still join Serbia's values to the correct boundary feature.
+    assert by_code["XS"]["name"] == "Serbia"
+    assert by_code["XS"]["values"] == {"2015": {"young_slaughter": 8}}
 
     # Geometry must survive untouched -- it's the whole point of the file.
     de_feature = next(f for f in geojson["features"] if f["properties"]["code"] == "DE")
@@ -149,7 +161,7 @@ def test_render_substitutes_all_placeholders():
         "const years = __YEARS_JSON__;"
         "</script>"
         '<div id="categoryFilter">__CATEGORY_FILTER_HTML__</div>'
-        '<div class="footer">__PROJECT_NOTES_HTML__</div>'
+        '<div class="footer"></div>'
     )
     geojson = {"type": "FeatureCollection", "features": []}
     years = ["2015", "2016"]
@@ -164,4 +176,3 @@ def test_render_substitutes_all_placeholders():
     assert json.loads(html[start:end]) == geojson
 
     assert 'class="viewRadio" value="calves"' in html
-    assert '<details class="notes">' in html

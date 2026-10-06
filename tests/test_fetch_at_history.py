@@ -9,7 +9,74 @@ unrelated to whether our own code is correct.
 """
 
 import pandas as pd
-from fetch_at_history import aggregate, aggregate_monthly
+from fetch_at_history import aggregate, aggregate_monthly, validate_api_response
+
+
+def _valid_api_rows():
+    return pd.DataFrame(
+        [
+            {
+                "freq": "M",
+                "reporter": "AT",
+                "partner": "DE",
+                "product": "01022110",
+                "flow": "2",
+                "indicators": indicator,
+                "TIME_PERIOD": "2023-01",
+                "OBS_VALUE": value,
+            }
+            for indicator, value in [
+                ("SUPPLEMENTARY_QUANTITY", 10),
+                ("VALUE_IN_EUROS", 15000),
+            ]
+        ]
+    )
+
+
+def test_validate_api_response_accepts_requested_complete_observations():
+    clean = validate_api_response(_valid_api_rows(), 2023, "AT", "2")
+
+    assert clean["OBS_VALUE"].sum() == 15010
+
+
+def test_validate_api_response_rejects_missing_measure_instead_of_zero_filling():
+    rows = _valid_api_rows().iloc[:1]
+
+    try:
+        validate_api_response(rows, 2023, "AT", "2")
+    except ValueError as error:
+        assert "exactly the requested indicators" in str(error)
+    else:
+        raise AssertionError("incomplete indicators should be rejected")
+
+
+def test_validate_api_response_rejects_a_measure_missing_for_one_observation_key():
+    rows = pd.concat(
+        [
+            _valid_api_rows(),
+            _valid_api_rows().iloc[[0]].assign(partner="FR"),
+        ],
+        ignore_index=True,
+    )
+
+    try:
+        validate_api_response(rows, 2023, "AT", "2")
+    except ValueError as error:
+        assert "missing a requested indicator" in str(error)
+    else:
+        raise AssertionError("each observation key should contain both measures")
+
+
+def test_validate_api_response_rejects_null_observation_values():
+    rows = _valid_api_rows()
+    rows.loc[0, "OBS_VALUE"] = None
+
+    try:
+        validate_api_response(rows, 2023, "AT", "2")
+    except ValueError as error:
+        assert "missing or non-numeric" in str(error)
+    else:
+        raise AssertionError("missing observation values should be rejected")
 
 
 def test_aggregate_sums_by_year_and_excludes_aggregate_partners():

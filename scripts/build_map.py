@@ -21,8 +21,12 @@ from pathlib import Path
 
 import pandas as pd
 from countries import COUNTRY_NAMES, EU_MEMBERS, REPORTERS
-from product_categories import CODE_TO_CATEGORY, VIEWS, render_category_filter_html
-from project_notes import render_project_notes_html
+from product_categories import (
+    CODE_TO_CATEGORY,
+    VIEWS,
+    render_category_filter_html,
+    validate_product_codes,
+)
 from site_nav import render_site_tabs_html
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -41,6 +45,10 @@ REPORTER_DATA_DIR = PUBLIC_DIR / "data" / "map"
 # "partner" row in the data, but the map highlights it separately so it's
 # clear where the exports are coming from.
 EXPORTER_ISO2 = "AT"
+# Eurostat's Comext codelist uses XS for Serbia, while Natural Earth uses
+# the ISO alpha-2 code RS. Normalize the boundary code to the data code so
+# Serbian exports are attached to Serbia's polygon instead of disappearing.
+BOUNDARY_CODE_ALIASES = {"RS": "XS"}
 
 
 def load_values_by_country(
@@ -88,6 +96,7 @@ def _load_by_country(
     path = processed_dir / f"{reporter.lower()}_bovine_exports_yearly_by_partner_product.csv"
     df = pd.read_csv(path, dtype={"year": str, "partner": str, "product": str})
     df[value_column] = df[value_column].round().astype(int)
+    validate_product_codes(df["product"])
     df["category"] = df["product"].map(CODE_TO_CATEGORY)
 
     by_country: dict[str, dict[str, dict[str, int]]] = {}
@@ -168,6 +177,7 @@ def load_country_boundary_features(boundaries_path: Path = BOUNDARIES_PATH) -> l
         code = feature["properties"].get("ISO_A2_EH")
         if not code or code == "-99":
             code = feature["properties"]["ISO_A2"]
+        code = BOUNDARY_CODE_ALIASES.get(code, code)
         # Prefer our own English name (matches dashboard 1's labels exactly
         # for every country that actually has trade data); fall back to
         # Natural Earth's own English name for the rest of the world, which
@@ -213,7 +223,6 @@ def render(
         ),
         "__CATEGORY_FILTER_HTML__": render_category_filter_html(),
         "__VIEWS_JSON__": json.dumps(VIEWS, ensure_ascii=False),
-        "__PROJECT_NOTES_HTML__": render_project_notes_html(),
         "__SITE_TABS_HTML__": render_site_tabs_html("map.html"),
     }
     for token, value in replacements.items():
@@ -265,9 +274,7 @@ def main() -> None:
         )
         other_years = sorted({year for values in other_values.values() for year in values})
         data_path = REPORTER_DATA_DIR / f"{code.lower()}.js"
-        payload = json.dumps(
-            {"geojson": other_geojson, "years": other_years}, ensure_ascii=False
-        )
+        payload = json.dumps({"geojson": other_geojson, "years": other_years}, ensure_ascii=False)
         data_path.write_text(f"window.REPORTER_DATA['{code}'] = {payload};", encoding="utf-8")
         print(
             f"Wrote {data_path} ({len(other_geojson['features'])} countries, "

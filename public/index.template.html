@@ -47,13 +47,6 @@
      }
      .siteTabBtn:hover{ color:var(--text); }
      .siteTabBtn.active{ color:var(--turq); border-bottom-color:var(--turq); cursor:default; }
-     /* Mirror Statistics is an internal/dev view, not a finished dashboard --
-        muted + italic by default, purple (not the usual turquoise) when
-        active or hovered, so it visually reads as "different" from the
-        other five tabs. */
-     .siteTabBtnDev{ color:rgba(240,238,239,.42); font-style:italic; }
-     .siteTabBtnDev:hover{ color:var(--purple); }
-     .siteTabBtnDev.active{ color:var(--purple); border-bottom-color:var(--purple); }
 
      .header{ padding-top:14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
      h1{ margin:0; font-size:30px; line-height:1.1; letter-spacing:-0.02em; }
@@ -89,12 +82,14 @@
      .footer p{ margin:0 0 6px; }
      .footer p:last-child{ margin-bottom:0; }
      .footer strong{ color:rgba(240,238,239,.85); font-weight:600; }
+     .footer a{ color:var(--turq); }
      .notes{ margin-top:10px; }
      .notes summary{ font-size:12px; color:var(--turq); cursor:pointer; }
      .notes ul{ margin:8px 0 0; padding-left:18px; }
      .notes li{ margin-bottom:4px; }
 
      .panel{ margin-top:16px; border:1px solid var(--border); background:var(--panel); padding:14px 14px 10px; }
+     .noDataNote{ margin-top:16px; border:1px solid var(--border); background:var(--panel); padding:16px; color:var(--muted); font-size:14px; }
      .meta{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; font-size:12.5px; color:rgba(240,238,239,.72); }
      .meta strong{ color:rgba(240,238,239,.92); font-weight:600; }
      .panelTitle{ margin:0 0 4px; font-size:16px; font-weight:600; color:rgba(240,238,239,.92); }
@@ -134,6 +129,77 @@
        .sidebar{ width:100%; position:static; order:2; }
      }
      @media (max-width:760px){ h1{font-size:24px;} #yearlyChart{height:340px !important;} #partnersChart{height:340px !important;} }
+
+     /* Reader interface polish: preserve The Marker palette while adding
+        clearer grouping, calmer spacing, and stronger keyboard focus. */
+     :root{
+       color-scheme:dark;
+       --panel:rgba(255,255,255,.045);
+       --border:rgba(240,238,239,.14);
+       --text:rgba(240,238,239,.94);
+       --muted:rgba(240,238,239,.70);
+       --grid:rgba(240,238,239,.12);
+       --surface:#10110f;
+       --surface-raised:#171815;
+       --radius:14px;
+       --shadow:0 12px 32px rgba(0,0,0,.20);
+     }
+     body{
+       background:radial-gradient(ellipse at 50% -18%,rgba(49,104,143,.17),transparent 42%),var(--black);
+       line-height:1.55;
+     }
+     .wrap{max-width:1440px;padding:24px clamp(16px,3vw,36px) 48px;}
+     .siteTabs{gap:6px;padding:0 2px;border-bottom-color:rgba(240,238,239,.12);}
+     .siteTabBtn{font-size:13px;padding:11px 15px;border-radius:9px 9px 0 0;transition:color .16s ease,background .16s ease;}
+     .siteTabBtn:hover{background:rgba(240,238,239,.055);}
+     .siteTabBtn.active{background:rgba(111,178,165,.10);}
+     .header{padding-top:24px;margin-bottom:20px;align-items:center;}
+     h1{font-size:clamp(27px,3vw,38px);line-height:1.15;letter-spacing:-.035em;}
+     .headerControls{gap:12px;align-items:flex-end;}
+     .reporterPicker,.unitToggle{padding:10px 12px;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.035);}
+     .reporterPicker label,.unitToggle .toggleLabel{font-size:11px;font-weight:650;letter-spacing:.045em;text-transform:uppercase;}
+     .reporterPicker select,.unitToggleGroup{border-color:rgba(240,238,239,.20);border-radius:7px;}
+     .reporterPicker select{min-height:40px;}
+     .unitToggleBtn{min-height:38px;border-radius:6px;}
+     .panel,.filterPanel,.controls{
+       border:1px solid var(--border);border-radius:var(--radius);
+       background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.025));
+       box-shadow:var(--shadow);
+     }
+     .panel{padding:20px 20px 16px;margin-top:18px;}
+     .panelTitle{font-size:17px;line-height:1.35;margin-bottom:8px;}
+     .meta{font-size:13px;line-height:1.55;}
+     .filterPanel{padding:18px;}
+     .filterPanel h2{font-size:11px;letter-spacing:.09em;color:var(--turq);}
+     .filterRow{gap:22px;}
+     .filterGroup,.geoFilter{padding:12px;border:1px solid rgba(240,238,239,.09);border-radius:10px;background:rgba(1,2,0,.16);}
+     .filterLeaf label,.geoFilter label,.filterGroup>label,.groupLabel{min-height:30px;line-height:1.4;}
+     .filterCodes summary{padding:4px 0;}
+     .controls{padding:14px 18px;}
+     .yearTabs{gap:6px;border-bottom-color:rgba(240,238,239,.12);}
+     .yearTabBtn{border-radius:8px 8px 0 0;}
+     .yearTabBtn.active{background:rgba(111,178,165,.10);}
+     .footer{max-width:95ch;font-size:13px;line-height:1.65;}
+     .footer a,.notes summary{font-weight:600;text-underline-offset:3px;}
+     :where(a,button,select,input,summary):focus-visible{outline:3px solid var(--pink);outline-offset:3px;}
+     button,select{transition:background-color .16s ease,color .16s ease,border-color .16s ease;}
+     @media(max-width:900px){.header{align-items:flex-start}.sidebar{position:static}.filterPanel{box-shadow:none}}
+     @media(max-width:640px){
+       .wrap{padding:12px 12px 32px;}
+       .siteTabs{gap:2px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin;}
+       .siteTabBtn{white-space:nowrap;padding:10px 11px;font-size:12px;}
+       .header{padding-top:20px;gap:14px;}
+       .headerControls{width:100%;align-items:stretch;}
+       .reporterPicker,.unitToggle{flex:1;min-width:0;}
+       .reporterPicker select{width:100%;min-width:0;}
+       .unitToggleGroup{display:flex;}
+       .unitToggleBtn{flex:1;padding:8px 9px;font-size:12px;}
+       .panel{padding:15px 13px 12px;margin-top:13px;border-radius:12px;}
+       .filterPanel{padding:14px;border-radius:12px;}
+       .controls{gap:9px;padding:12px;border-radius:12px;}
+       #map{height:390px;}
+     }
+     @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;}}
    </style>
 </head>
 
@@ -162,12 +228,14 @@
 
    <div class="layout">
      <div class="main">
-       <div class="panel">
+       <p class="noDataNote" id="noDataNote" style="display:none;"></p>
+
+       <div class="panel" id="yearlyPanel">
          <p class="panelTitle">Yearly exports, __YEAR_RANGE__</p>
          <canvas id="yearlyChart"></canvas>
        </div>
 
-       <div class="panel">
+       <div class="panel" id="partnersPanel">
          <div class="meta">
            <div><strong>View:</strong> top 10 destination countries for one year -- click a bar above to change the year.</div>
          </div>
@@ -184,7 +252,7 @@
            <strong>Included:</strong> breeding cattle (pure-bred), slaughter cattle, other cattle (rearing/store).
            <strong>Not included:</strong> buffalo.
          </p>
-         __PROJECT_NOTES_HTML__
+         <p><a href="methodology.html">Methodology and data</a></p>
        </div>
      </div>
 
@@ -351,7 +419,29 @@
    let selectedYear = years[years.length - 1];
 
    const partnersTitle = document.getElementById('partnersTitle');
-   partnersTitle.textContent = `Top destination countries, ${selectedYear}`;
+   const noDataNote = document.getElementById('noDataNote');
+   const yearlyPanel = document.getElementById('yearlyPanel');
+   const partnersPanel = document.getElementById('partnersPanel');
+
+   // A reporter can genuinely have zero years of export data -- e.g. Malta
+   // reports no live-cattle exports at all under this heading, 2015-2026,
+   // confirmed via the live API, not a loading glitch. Rather than show two
+   // empty-looking charts (a meaningless 0-1 axis, a title reading
+   // "undefined" because selectedYear has nothing to be), swap the whole
+   // chart area for one plain note in that case.
+   function updateNoDataState(){
+     const hasData = years.length > 0;
+     yearlyPanel.style.display = hasData ? '' : 'none';
+     partnersPanel.style.display = hasData ? '' : 'none';
+     noDataNote.style.display = hasData ? 'none' : '';
+     if (!hasData){
+       noDataNote.textContent =
+         `No export data has been reported for ${reporterNameInTitle.textContent} in this period.`;
+     } else {
+       partnersTitle.textContent = `Top destination countries, ${selectedYear}`;
+     }
+   }
+   updateNoDataState();
 
    // Returns a colour for every year: full opacity for the currently
    // selected year, dimmed (35%) for all others.
@@ -462,6 +552,9 @@
    // (tooltip text, axis tick text) reads unitMode live through
    // formatUnit()/formatUnitShort() and needs no extra update here.
    function renderAll(){
+     updateNoDataState();
+     if (!years.length) return;
+
      // Reset every time (not just at chart creation) -- switchReporter()
      // further down can swap "years" out for a different array entirely,
      // and Chart.js only ever sees whatever was last assigned to its own
@@ -478,7 +571,6 @@
      partnersChart.data.datasets[0].data = rows.map(r => r.quantity);
      partnersChart.data.datasets[0].label = datasetLabel();
      partnersChart.update();
-     partnersTitle.textContent = `Top destination countries, ${selectedYear}`;
    }
 
    function selectYear(year){

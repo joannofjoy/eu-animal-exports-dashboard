@@ -19,8 +19,12 @@ from pathlib import Path
 
 import pandas as pd
 from countries import COUNTRY_NAMES
-from product_categories import CODE_TO_CATEGORY, VIEWS, render_category_filter_html
-from project_notes import render_project_notes_html
+from product_categories import (
+    CODE_TO_CATEGORY,
+    VIEWS,
+    render_category_filter_html,
+    validate_product_codes,
+)
 from site_nav import render_site_tabs_html
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -69,6 +73,7 @@ def load_mirror_by_country(processed_dir: Path = PROCESSED_DIR) -> dict[str, dic
     """
     path = processed_dir / "mirror_comparison.csv"
     df = pd.read_csv(path, dtype={"year": str, "country": str, "product": str})
+    validate_product_codes(df["product"])
     df["category"] = df["product"].map(CODE_TO_CATEGORY)
 
     result: dict[str, dict[str, dict]] = {}
@@ -102,7 +107,6 @@ def render(template: str, mirror_by_country: dict, countries: list[dict], years:
         "__YEARS_JSON__": json.dumps(years, ensure_ascii=False),
         "__CATEGORY_FILTER_HTML__": render_category_filter_html(),
         "__VIEWS_JSON__": json.dumps(VIEWS, ensure_ascii=False),
-        "__PROJECT_NOTES_HTML__": render_project_notes_html(),
         "__SITE_TABS_HTML__": render_site_tabs_html("mirror.html"),
     }
     for token, value in replacements.items():

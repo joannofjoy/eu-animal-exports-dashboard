@@ -27,10 +27,9 @@ def test_all_pages_appear_exactly_once():
     assert html.count('class="siteTabBtn') == len(PAGES)
 
 
-def test_mirror_statistics_is_last_and_marked_as_dev():
-    assert PAGES[-1][0] == "mirror.html"
+def test_methodology_is_in_reader_navigation_and_mirror_is_not():
+    assert PAGES[-1][0] == "methodology.html"
 
     html = render_site_tabs_html("index.html")
-    assert 'siteTabBtnDev' in html
-    assert 'Mirror Statistics (dev)' in html
-    assert 'title="Internal data-quality view' in html
+    assert 'href="methodology.html"' in html
+    assert 'href="mirror.html"' not in html

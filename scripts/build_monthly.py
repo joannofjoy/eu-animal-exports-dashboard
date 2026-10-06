@@ -29,8 +29,12 @@ from build_map import (
     load_values_eur_by_country,
 )
 from countries import COUNTRY_NAMES, EU_MEMBERS, REPORTERS
-from product_categories import CODE_TO_CATEGORY, VIEWS, render_category_filter_html
-from project_notes import render_project_notes_html
+from product_categories import (
+    CODE_TO_CATEGORY,
+    VIEWS,
+    render_category_filter_html,
+    validate_product_codes,
+)
 from site_nav import render_site_tabs_html
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -79,6 +83,7 @@ def load_monthly_by_year(
     df = pd.read_csv(path, dtype={"month": str, "partner": str, "product": str})
     df["quantity"] = df["quantity"].round().astype(int)
     df["value_eur"] = df["value_eur"].round().astype(int)
+    validate_product_codes(df["product"])
     df["category"] = df["product"].map(CODE_TO_CATEGORY)
     df["year"] = df["month"].str.slice(0, 4)
 
@@ -89,18 +94,14 @@ def load_monthly_by_year(
             partners = []
             for code, partner_group in month_group.groupby("partner"):
                 by_category = partner_group.groupby("category")["quantity"].sum().to_dict()
-                by_category_value = (
-                    partner_group.groupby("category")["value_eur"].sum().to_dict()
-                )
+                by_category_value = partner_group.groupby("category")["value_eur"].sum().to_dict()
                 partners.append(
                     {
                         "code": code,
                         "name": COUNTRY_NAMES.get(code, code),
                         "isEU": code in EU_MEMBERS,
                         "byCategory": {k: int(v) for k, v in by_category.items()},
-                        "byCategoryValueEur": {
-                            k: int(v) for k, v in by_category_value.items()
-                        },
+                        "byCategoryValueEur": {k: int(v) for k, v in by_category_value.items()},
                     }
                 )
             by_month[month] = partners
@@ -139,7 +140,6 @@ def render(
         ),
         "__CATEGORY_FILTER_HTML__": render_category_filter_html(),
         "__VIEWS_JSON__": json.dumps(VIEWS, ensure_ascii=False),
-        "__PROJECT_NOTES_HTML__": render_project_notes_html(),
         "__SITE_TABS_HTML__": render_site_tabs_html("monthly.html"),
     }
     for token, value in replacements.items():
@@ -184,9 +184,7 @@ def main() -> None:
         if code == "AT":
             continue
         try:
-            other_partners, other_monthly, other_geojson, other_years = _load_reporter_bundle(
-                code
-            )
+            other_partners, other_monthly, other_geojson, other_years = _load_reporter_bundle(code)
         except FileNotFoundError:
             print(
                 f"Skipping {name} ({code}): no processed data yet -- "

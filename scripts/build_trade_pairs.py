@@ -22,8 +22,12 @@ from pathlib import Path
 import pandas as pd
 from build_map import BOUNDARIES_PATH, load_country_boundary_features
 from countries import COUNTRY_NAMES, EU_MEMBERS, REPORTERS
-from product_categories import CODE_TO_CATEGORY, VIEWS, render_category_filter_html
-from project_notes import render_project_notes_html
+from product_categories import (
+    CODE_TO_CATEGORY,
+    VIEWS,
+    render_category_filter_html,
+    validate_product_codes,
+)
 from site_nav import render_site_tabs_html
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -45,11 +49,10 @@ def _load_by_category(path: Path, direction_key: str) -> pd.DataFrame:
     value_eur columns (summed per category), not just quantity.
     """
     df = pd.read_csv(path, dtype={"year": str, "partner": str, "product": str})
+    validate_product_codes(df["product"])
     df["category"] = df["product"].map(CODE_TO_CATEGORY)
     by_category = (
-        df.groupby(["year", "partner", "category"])[["quantity", "value_eur"]]
-        .sum()
-        .reset_index()
+        df.groupby(["year", "partner", "category"])[["quantity", "value_eur"]].sum().reset_index()
     )
     by_category["direction"] = direction_key
     return by_category
@@ -106,16 +109,11 @@ def load_trade_pairs_by_country(
                 "atImportValueEur": {},
             }
             for direction, direction_group in year_group.groupby("direction"):
-                by_cat = (
-                    direction_group.groupby("category")["quantity"].sum().astype(int).to_dict()
-                )
+                by_cat = direction_group.groupby("category")["quantity"].sum().astype(int).to_dict()
                 directions[direction] = {k: v for k, v in by_cat.items() if v != 0}
 
                 by_cat_value = (
-                    direction_group.groupby("category")["value_eur"]
-                    .sum()
-                    .astype(int)
-                    .to_dict()
+                    direction_group.groupby("category")["value_eur"].sum().astype(int).to_dict()
                 )
                 directions[f"{direction}ValueEur"] = {
                     k: v for k, v in by_cat_value.items() if v != 0
@@ -180,7 +178,6 @@ def render(
         ),
         "__CATEGORY_FILTER_HTML__": render_category_filter_html(),
         "__VIEWS_JSON__": json.dumps(VIEWS, ensure_ascii=False),
-        "__PROJECT_NOTES_HTML__": render_project_notes_html(),
         "__SITE_TABS_HTML__": render_site_tabs_html("trade_pairs.html"),
     }
     for token, value in replacements.items():
@@ -230,9 +227,7 @@ def main() -> None:
         if code == "AT":
             continue
         try:
-            other_pairs, other_countries, other_years, other_geojson = _load_reporter_bundle(
-                code
-            )
+            other_pairs, other_countries, other_years, other_geojson = _load_reporter_bundle(code)
         except FileNotFoundError:
             print(
                 f"Skipping {name} ({code}): no processed data yet -- "
@@ -250,9 +245,7 @@ def main() -> None:
             ensure_ascii=False,
         )
         data_path.write_text(f"window.REPORTER_DATA['{code}'] = {payload};", encoding="utf-8")
-        print(
-            f"Wrote {data_path} ({len(other_countries)} countries, {len(other_years)} years)"
-        )
+        print(f"Wrote {data_path} ({len(other_countries)} countries, {len(other_years)} years)")
 
 
 if __name__ == "__main__":

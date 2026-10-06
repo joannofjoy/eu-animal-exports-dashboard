@@ -48,7 +48,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
-from fetch_at_history import PRODUCTS, REPORTER, aggregate
+from fetch_at_history import PRODUCTS, REPORTER, aggregate, validate_api_response
 
 BASE_URL = "https://ec.europa.eu/eurostat/api/comext/dissemination/sdmx/2.1/data/DS-045409"
 FLOW = "1"  # import (arrivals)
@@ -90,6 +90,7 @@ def fetch(start_year: int, end_year: int, reporter: str = REPORTER) -> pd.DataFr
     for i, year in enumerate(range(start_year, end_year + 1)):
         content = fetch_year(year, reporter)
         year_df = pd.read_csv(BytesIO(content), dtype={"product": str, "partner": str})
+        year_df = validate_api_response(year_df, year, reporter, FLOW, INDICATORS)
         years_data.append(year_df)
 
         mode = "wb" if i == 0 else "ab"

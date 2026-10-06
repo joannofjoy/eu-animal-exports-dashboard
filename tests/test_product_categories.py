@@ -9,8 +9,14 @@ silently drop some trade or double-count it -- and every VIEW's
 see a total that's quietly missing some trade.
 """
 
+import pytest
 from fetch_at_history import PRODUCTS
-from product_categories import CATEGORIES, CODE_TO_CATEGORY, VIEWS
+from product_categories import (
+    CATEGORIES,
+    CODE_TO_CATEGORY,
+    VIEWS,
+    validate_product_codes,
+)
 
 
 def test_every_product_is_categorized_exactly_once():
@@ -36,3 +42,8 @@ def test_view_keys_are_unique():
 def test_all_view_covers_every_category():
     all_view = next(view for view in VIEWS if view["key"] == "all")
     assert sorted(all_view["categories"]) == sorted(CATEGORIES.keys())
+
+
+def test_unknown_product_codes_are_rejected_before_grouping():
+    with pytest.raises(ValueError, match="Uncategorized product codes"):
+        validate_product_codes(["01022110", "00000000"])

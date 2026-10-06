@@ -38,7 +38,9 @@ def test_load_trade_pairs_by_country_handles_export_only_partner(tmp_path):
     # should still show up, with the missing direction as an empty dict
     # rather than crashing or being dropped entirely.
     exports_path = tmp_path / "at_bovine_exports_yearly_by_partner_product.csv"
-    exports_path.write_text("year,partner,product,quantity,value_eur\n2024,HR,01022110,4813,3800000\n")
+    exports_path.write_text(
+        "year,partner,product,quantity,value_eur\n2024,HR,01022110,4813,3800000\n"
+    )
     imports_path = tmp_path / "at_bovine_imports_yearly_by_partner_product.csv"
     imports_path.write_text("year,partner,product,quantity,value_eur\n")
 
@@ -107,7 +109,7 @@ def test_render_substitutes_all_placeholders():
         "const countriesGeoJson = __COUNTRIES_GEOJSON__;"
         "</script>"
         '<div id="categoryFilter">__CATEGORY_FILTER_HTML__</div>'
-        '<div class="footer">__PROJECT_NOTES_HTML__</div>'
+        '<div class="footer"></div>'
     )
     trade_pairs_by_country = {
         "CZ": {"2024": {"atExport": {"schlachtrinder": 30}, "atImport": {"schlachtrinder": 36819}}}
@@ -132,4 +134,3 @@ def test_render_substitutes_all_placeholders():
         assert json.loads(html[start:end]) == expected
 
     assert 'class="viewRadio" value="calves"' in html
-    assert '<details class="notes">' in html

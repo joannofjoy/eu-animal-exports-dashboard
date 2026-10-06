@@ -25,8 +25,12 @@ from pathlib import Path
 
 import pandas as pd
 from countries import COUNTRY_NAMES, EU_MEMBERS, REPORTERS
-from product_categories import CODE_TO_CATEGORY, VIEWS, render_category_filter_html
-from project_notes import render_project_notes_html
+from product_categories import (
+    CODE_TO_CATEGORY,
+    VIEWS,
+    render_category_filter_html,
+    validate_product_codes,
+)
 from site_nav import render_site_tabs_html
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -76,6 +80,7 @@ def load_partners_by_year(
     df["quantity"] = df["quantity"].round().astype(int)
     df["value_eur"] = df["value_eur"].round().astype(int)
 
+    validate_product_codes(df["product"])
     # Turn each row's raw CN8 product code into one of the four category
     # keys from product_categories.py (e.g. "01022110" -> "zuchtrinder_original").
     df["category"] = df["product"].map(CODE_TO_CATEGORY)
@@ -144,7 +149,6 @@ def render(
         ),
         "__CATEGORY_FILTER_HTML__": render_category_filter_html(),
         "__VIEWS_JSON__": json.dumps(VIEWS, ensure_ascii=False),
-        "__PROJECT_NOTES_HTML__": render_project_notes_html(),
         "__SITE_TABS_HTML__": render_site_tabs_html("index.html"),
     }
     for token, value in replacements.items():

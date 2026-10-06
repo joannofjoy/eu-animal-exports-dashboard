@@ -1,11 +1,9 @@
 """ISO2 partner-country code -> English display name.
 
-This only covers the country codes that actually show up in Austria's
-DS-045409 export data (2015-2025) -- it is not a general-purpose country
-list. Names are the standard English short names for each country (a
-German-locale version of this file existed earlier in the project; the
-dashboards now default to English, with translation into other languages
-planned outside this project's scope).
+This covers the country codes currently present in the 27 EU reporters'
+DS-045409 import/export data -- it is not a general-purpose country list.
+Names are the standard English short names (translation into other
+languages is outside this project's scope).
 
 A plain dict, at module level, is a Python variable that exists for the
 lifetime of the program once this file is imported -- other scripts just
@@ -18,15 +16,19 @@ COUNTRY_NAMES = {
     "AT": "Austria",
     "AL": "Albania",
     "AM": "Armenia",
+    "AU": "Australia",
     "AZ": "Azerbaijan",
     "BA": "Bosnia and Herzegovina",
     "BE": "Belgium",
+    "BJ": "Benin",
     "BG": "Bulgaria",
     "BH": "Bahrain",
+    "CA": "Canada",
     "CH": "Switzerland",
     "CI": "Côte d'Ivoire",
     "CY": "Cyprus",
     "CZ": "Czechia",
+    "CN": "China",
     "DE": "Germany",
     "DK": "Denmark",
     "DZ": "Algeria",
@@ -36,10 +38,12 @@ COUNTRY_NAMES = {
     "FR": "France",
     "GB": "United Kingdom",
     "GE": "Georgia",
+    "GI": "Gibraltar",
     "GR": "Greece",
     "HR": "Croatia",
     "HU": "Hungary",
     "IE": "Ireland",
+    "ID": "Indonesia",
     "IR": "Iran",
     "IT": "Italy",
     "KG": "Kyrgyzstan",
@@ -52,6 +56,7 @@ COUNTRY_NAMES = {
     "MK": "North Macedonia",
     "MN": "Mongolia",
     "NL": "Netherlands",
+    "NO": "Norway",
     "PE": "Peru",
     "PT": "Portugal",
     "PL": "Poland",
@@ -68,13 +73,8 @@ COUNTRY_NAMES = {
     "UZ": "Uzbekistan",
     "XK": "Kosovo",
     "XS": "Serbia",
-    # Added once Germany/Ireland/Spain/France/Netherlands were fetched as
-    # additional reporters -- this file originally only covered the codes
-    # that showed up in Austria's own export data (see the module
-    # docstring), so a much wider set of destination countries showed up
-    # as bare, unnamed ISO2 codes in the UI the moment a different
-    # reporter was picked. Cross-checked against Eurostat's own CXT_FREE_ISO
-    # codelist, not guessed.
+    # These additional destinations occur in the other reporters' data;
+    # names were checked against Eurostat's CXT_FREE_ISO codelist.
     "AD": "Andorra",
     "AE": "United Arab Emirates",
     "AF": "Afghanistan",
@@ -117,6 +117,22 @@ COUNTRY_NAMES = {
     # mainland Spain.
     "XC": "Ceuta",
     "XL": "Melilla",
+    # Turned up only once all 27 reporters had data (small reporters trade
+    # with a wider, more varied set of non-EU partners than Austria alone
+    # did) -- names checked against Eurostat's CXT_FREE_ISO codelist, same
+    # as the block above.
+    "AR": "Argentina",
+    "BR": "Brazil",
+    "BS": "Bahamas",
+    "CG": "Congo",
+    "FO": "Faroe Islands",
+    "IS": "Iceland",
+    "MG": "Madagascar",
+    "MY": "Malaysia",
+    "NG": "Nigeria",
+    "PS": "Occupied Palestinian Territory",
+    "UG": "Uganda",
+    "VN": "Vietnam",
 }
 
 # The 27 current EU member states (ISO2), for splitting partner countries
@@ -164,13 +180,38 @@ EU_MEMBERS = frozenset(
 # page by default; the rest load their data on demand when picked -- see
 # build_dashboard.py's main() for how the per-reporter JSON files are
 # written. Comext only accepts EU member states as reporters (see
-# fetch_at_history.py's module docstring), so this can only ever grow by
-# adding more of the 27, never a non-EU code.
+# fetch_at_history.py's module docstring) -- this is now all 27, so it
+# can't grow further; alphabetical by code after Austria, matching
+# EU_MEMBERS above. Verified GR (not EL, the code some other Eurostat
+# datasets use for Greece) is the correct Comext reporter code for Greece
+# via a live API call -- confirmed rather than assumed, since the two
+# conventions genuinely differ across different Eurostat datasets.
 REPORTERS = [
     ("AT", "Austria"),
-    ("DE", "Germany"),
-    ("IE", "Ireland"),
-    ("ES", "Spain"),
+    ("BE", "Belgium"),
+    ("BG", "Bulgaria"),
+    ("HR", "Croatia"),
+    ("CY", "Cyprus"),
+    ("CZ", "Czechia"),
+    ("DK", "Denmark"),
+    ("EE", "Estonia"),
+    ("FI", "Finland"),
     ("FR", "France"),
+    ("DE", "Germany"),
+    ("GR", "Greece"),
+    ("HU", "Hungary"),
+    ("IE", "Ireland"),
+    ("IT", "Italy"),
+    ("LV", "Latvia"),
+    ("LT", "Lithuania"),
+    ("LU", "Luxembourg"),
+    ("MT", "Malta"),
     ("NL", "Netherlands"),
+    ("PL", "Poland"),
+    ("PT", "Portugal"),
+    ("RO", "Romania"),
+    ("SK", "Slovakia"),
+    ("SI", "Slovenia"),
+    ("ES", "Spain"),
+    ("SE", "Sweden"),
 ]

@@ -1,19 +1,20 @@
 # EU Animal Exports Dashboard
 
-Dashboards visualizing live-cattle exports from six EU countries, built
-from Eurostat Comext trade data. See `docs/eurostat_comext_api.md` for
-why dataset `DS-045409` is the one used, and `docs/llm_agent_handoff.md`
-for the fuller history behind the current design — both are worth reading
-before making non-trivial changes here.
+Static dashboards visualizing live bovine-animal trade reported by all 27
+EU member states, using Eurostat Comext data. Reader-facing definitions and caveats
+are on [`public/methodology.html`](public/methodology.html). Technical
+decisions, data investigations and agent handoff notes remain under `docs/`
+and are not part of the published site; [`docs/README.md`](docs/README.md)
+explains what each document is for.
 
 ## Scope
 
 Every CN8 code under heading `0102` (live bovine animals) except buffalo
 and four pre-2002-nomenclature codes confirmed to carry zero trade (see
 `scripts/product_categories.py`'s module docstring for the full
-breakdown). Reporter is selectable in every page's header: Austria (`AT`,
-the default), Germany, Ireland, Spain, France, or Netherlands — see
-`scripts/countries.py`'s `REPORTERS`. Both export and import flows are
+breakdown). Reporter is selectable in every page's header: all 27 EU
+member states, Austria (`AT`) the default — see `scripts/countries.py`'s
+`REPORTERS`. Both export and import flows are
 fetched; both head count and trade value in euros are available
 throughout (a toggle in the header switches every chart/map/legend
 between them).
@@ -42,7 +43,8 @@ python scripts/fetch_world_boundaries.py   # one-time; boundaries don't change
 python scripts/fetch_mirror_data.py        # Austria only, feeds mirror.html
 ```
 
-`--reporter` accepts any of `AT`/`DE`/`IE`/`ES`/`FR`/`NL`. Raw monthly
+`--reporter` accepts any of the 27 EU member-state codes in
+`scripts/countries.py`'s `REPORTERS`. Raw monthly
 rows land in `data/raw/` (gitignored — large, easily regenerated);
 aggregated CSVs land in `data/processed/` (also gitignored, same reason).
 
@@ -71,16 +73,17 @@ blocked under `file://`; `<script src>` isn't).
 | `trade_pairs.html` | `trade_pairs.template.html` → `build_trade_pairs.py` | One reporter's own exports vs. imports with a single chosen partner country |
 | `dashboard.html` | `dashboard.template.html` → `build_site.py` | Both `index` and `map` combined on one page, tab-switchable — built but not linked in the site nav |
 | `mirror.html` | `mirror.template.html` → `build_mirror.py` | Internal QA tool: Austria's own declarations vs. partner countries' mirrored declarations (see `docs/mirror_tool_explained.md`) — Austria only, not part of the multi-reporter rollout |
+| `methodology.html` | Maintained directly | Reader-facing source, definitions and limitations; linked from the dashboards |
 
-All six pages share one filter panel (`scripts/product_categories.py`):
-a single-select view — All / Calves (≤300kg) / For slaughter / For
-breeding / For production-rearing — never a "veal"/"beef" label outright,
-since Comext has no age field and the weight brackets don't map onto the
-EU's legal veal/beef age line cleanly (see `docs/llm_agent_handoff.md`
-section 6 for the research behind that call).
+The reader dashboards share one product view (`scripts/product_categories.py`):
+All / Calves (≤300 kg) / For slaughter / For breeding / For
+production-rearing. “Calves” is a weight grouping, not an age label;
+Comext does not report age. See `public/methodology.html` for the reader
+explanation and the handoff notes for the research behind the decision.
 
-**Never edit a `.html` file in `public/` directly** — the next build
-silently overwrites it. Edit the matching `.template.html` instead.
+Generated dashboard pages in `public/` are built from their matching
+`.template.html` files. `methodology.html` is the exception: it is a
+hand-maintained static page, not build output.
 
 ## Dev setup (linting & tests)
 
@@ -99,22 +102,25 @@ functions, which would just be testing that the internet works.
 ## Automated refresh / hosting
 
 `.github/workflows/refresh.yml` runs `scripts/refresh_all.py` on the 1st
-and 15th of each month and deploys straight to GitHub Pages via the
-official deploy-pages action — nothing gets committed back to the repo on
-a scheduled run, it just re-fetches fresh and republishes. Requires, one
-time, in this repo's GitHub settings: **Settings → Pages → Source →
-GitHub Actions**.
+and 15th of each month, then stages the reader-facing pages in `site_dist/`
+with `scripts/make_deploy_site.py` and deploys that clean folder to GitHub
+Pages. Templates and the internal QA page are left out of the hosted
+artifact. Before the first publication, configure **Settings → Pages →
+Source → GitHub Actions** and confirm the intended public repository and
+URL. Scheduled refreshes publish new output without committing generated
+data to the repository. Review workflow runs and the published pages after
+the first deployment.
 
 ## Sharing a snapshot directly (not via the live link)
 
 ```
-python scripts/make_share_bundle.py
+python scripts/make_deploy_site.py
 ```
 
-Copies the finished pages (everything except `*.template.html` source
-files and `mirror.html`, the internal QA tool) plus their data files into
-`public_share/` — a clean, self-contained folder. Zip it and send it;
-every page still works opened directly (double-click `index.html`), no
+Same script and output (`site_dist/`) the CI workflow uses to publish —
+run it yourself any time you want a folder to zip and send to the team
+directly, instead of (or before) pointing people at the live link. Every
+page in it still works opened directly (double-click `index.html`), no
 server or live link needed on the recipient's end. Regenerate it after
 every data refresh you want to share — it's disposable build output
 (gitignored), not something to keep committed.

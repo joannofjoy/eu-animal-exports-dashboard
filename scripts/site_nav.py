@@ -1,4 +1,4 @@
-"""Renders the top-of-page tab bar used on all six dashboard pages to
+"""Renders the top-of-page navigation shared by the reader-facing pages.
 navigate between them -- a shared component (like product_categories.py's
 render_category_filter_html()) so the six pages' navigation can't drift
 out of sync with each other one page at a time, the way the old per-page
@@ -15,26 +15,14 @@ whole site reads consistently.
 
 import html
 
-# (filename, label) for every page, in the order the tabs should appear.
-# Mirror Statistics sits last and gets the "dev" treatment below -- it's a
-# data-quality/reconciliation view for working on this project, not one of
-# the six polished reader-facing dashboards.
+# Internal analysis pages are deliberately not included here.
 PAGES = [
     ("index.html", "Yearly Exports"),
     ("map.html", "Map"),
-    # "Combined View" (dashboard.html) is left out of the nav for now --
-    # the page and its build script still exist, it's just not linked from
-    # the tab bar at the moment.
     ("monthly.html", "Monthly"),
     ("trade_pairs.html", "Export vs. Import"),
-    ("mirror.html", "Mirror Statistics"),
+    ("methodology.html", "Methodology"),
 ]
-
-# Pages that are internal/development views rather than finished reader-facing
-# dashboards -- their tab renders muted and gets a "(dev)" suffix plus an
-# explanatory title tooltip instead of looking like just another normal tab.
-DEV_PAGES = {"mirror.html"}
-DEV_TOOLTIP = "Internal data-quality view for development use -- not intended for publication."
 
 
 def render_site_tabs_html(active_page: str) -> str:
@@ -48,14 +36,10 @@ def render_site_tabs_html(active_page: str) -> str:
     for filename, label in PAGES:
         safe_label = html.escape(label)
         classes = "siteTabBtn"
-        if filename in DEV_PAGES:
-            classes += " siteTabBtnDev"
-            safe_label += " (dev)"
 
         if filename == active_page:
             parts.append(f'<span class="{classes} active">{safe_label}</span>')
         else:
-            title = f' title="{html.escape(DEV_TOOLTIP)}"' if filename in DEV_PAGES else ""
-            parts.append(f'<a class="{classes}" href="{filename}"{title}>{safe_label}</a>')
+            parts.append(f'<a class="{classes}" href="{filename}">{safe_label}</a>')
 
     return "".join(parts)

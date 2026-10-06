@@ -161,6 +161,11 @@ AGGREGATE_PARTNERS = {
     # in the per-partner breakdowns.
     "QV",
     "QW",
+    # QS is another Eurostat catch-all, not a country: "Stores and
+    # provisions within the framework of extra-Union trade" (per the
+    # CXT_FREE_ISO codelist) -- found once the 27-reporter rollout turned
+    # up a reporter with trade recorded under it.
+    "QS",
 }
 
 # __file__ is this script's own path. .resolve() turns it into a full,
@@ -198,6 +203,86 @@ def fetch_year(year: int, reporter: str = REPORTER) -> bytes:
     return response.content
 
 
+def validate_api_response(
+    df: pd.DataFrame,
+    year: int,
+    reporter: str,
+    flow: str,
+    indicators: list[str] = INDICATORS,
+) -> pd.DataFrame:
+    """Reject a successful HTTP response if its observations don't match
+    the requested slice or if values/indicator pairs are incomplete.
+
+    Missing one of the paired measures must not silently become a zero in
+    _pivot_indicators(): an absent euro value is not evidence of zero value.
+    Returning the numeric OBS_VALUE column also keeps later sums from
+    depending on pandas' type inference.
+    """
+    required = {
+        "freq",
+        "reporter",
+        "partner",
+        "product",
+        "flow",
+        "indicators",
+        "TIME_PERIOD",
+        "OBS_VALUE",
+    }
+    missing_columns = required - set(df.columns)
+    if missing_columns:
+        raise ValueError(f"Eurostat response is missing columns: {sorted(missing_columns)}")
+    if df.empty:
+        # A genuinely empty year is a real possibility for a low-volume
+        # reporter (e.g. Cyprus, Malta) or for a year still in progress --
+        # confirmed live against the API for Sweden's 2022 imports, which
+        # really is just a header row with zero observations, not a
+        # broken request. Treating this as fatal would discard every
+        # *other* year's real data too, since fetch() only concatenates
+        # after validation succeeds for all years. So this returns the
+        # empty frame as-is (pd.concat later just contributes zero rows)
+        # instead of raising.
+        print(f"  Note: Eurostat returned no observations for {reporter}, flow {flow}, {year}")
+        return df
+
+    key_columns = ["freq", "reporter", "partner", "product", "flow", "indicators", "TIME_PERIOD"]
+    if df[key_columns].isna().any().any():
+        raise ValueError("Eurostat response contains a missing observation dimension")
+    if set(df["freq"].astype(str)) != {"M"}:
+        raise ValueError("Eurostat response contains a frequency other than monthly")
+
+    if set(df["reporter"].dropna().astype(str)) != {reporter}:
+        raise ValueError(f"Eurostat response contains a reporter other than {reporter}")
+    if set(df["flow"].dropna().astype(str)) != {flow}:
+        raise ValueError(f"Eurostat response contains a flow other than {flow}")
+    if not df["TIME_PERIOD"].astype(str).str.startswith(f"{year}-").all():
+        raise ValueError(f"Eurostat response contains observations outside {year}")
+    unexpected_products = set(df["product"].dropna().astype(str)) - set(PRODUCTS)
+    if unexpected_products:
+        raise ValueError(
+            f"Eurostat response contains unrequested products: {sorted(unexpected_products)}"
+        )
+    if set(df["indicators"].dropna().astype(str)) != set(indicators):
+        raise ValueError("Eurostat response does not contain exactly the requested indicators")
+
+    values = pd.to_numeric(df["OBS_VALUE"], errors="coerce")
+    if values.isna().any() or values.isin([float("inf"), float("-inf")]).any():
+        raise ValueError("Eurostat response contains missing or non-numeric observation values")
+
+    observation_key = ["freq", "reporter", "partner", "product", "flow", "TIME_PERIOD"]
+    duplicate_mask = df.duplicated([*observation_key, "indicators"], keep=False)
+    if duplicate_mask.any():
+        raise ValueError("Eurostat response contains duplicate observation keys")
+
+    indicator_sets = df.groupby(observation_key, dropna=False)["indicators"].agg(set)
+    expected_indicators = set(indicators)
+    if not indicator_sets.map(lambda found: found == expected_indicators).all():
+        raise ValueError("Eurostat response has observation keys missing a requested indicator")
+
+    cleaned = df.copy()
+    cleaned["OBS_VALUE"] = values
+    return cleaned
+
+
 def fetch(start_year: int, end_year: int, reporter: str = REPORTER) -> pd.DataFrame:
     """Download every year from start_year to end_year and return them
     combined as one pandas DataFrame (a table you can filter/group/sum,
@@ -228,6 +313,7 @@ def fetch(start_year: int, end_year: int, reporter: str = REPORTER) -> pd.DataFr
         # the leading zero and turns "01022110" into 1022110 -- a real bug
         # that happened earlier in this project.
         year_df = pd.read_csv(BytesIO(content), dtype={"product": str, "partner": str})
+        year_df = validate_api_response(year_df, year, reporter, FLOW)
         years_data.append(year_df)
 
         # Save the first year's raw response with the header row, and

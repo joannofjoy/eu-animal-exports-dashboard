@@ -49,7 +49,7 @@ def test_render_substitutes_all_placeholders():
         "const years = __YEARS_JSON__;"
         "</script>"
         '<div id="categoryFilter">__CATEGORY_FILTER_HTML__</div>'
-        '<div class="footer">__PROJECT_NOTES_HTML__</div>'
+        '<div class="footer"></div>'
     )
     mirror_by_country = {
         "HR": {"2024": {"atExportUnits": {"zuchtrinder_original": 4813}, "partnerImportUnits": {}}}
@@ -72,4 +72,3 @@ def test_render_substitutes_all_placeholders():
         assert json.loads(html[start:end]) == expected
 
     assert 'class="viewRadio" value="calves"' in html
-    assert '<details class="notes">' in html

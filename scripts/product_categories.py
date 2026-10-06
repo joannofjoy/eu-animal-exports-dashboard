@@ -53,7 +53,7 @@ double-count every code that belongs to both.
   (heifers/cows/bulls/steers under the generic "domestic bovines" series)
   whose open-ended upper bound straddles the 300kg line with no way to
   split it further -- confirmed via the live API to be zero-volume for
-  every one of this project's six reporters across 2021-2025, so excluding
+  every one of this project's 27 reporters across 2015-2026, so excluding
   them from the weight split costs nothing in practice.
 
 Every code from PRODUCTS in fetch_at_history.py appears in exactly one of
@@ -62,6 +62,7 @@ that enforces that stays true if PRODUCTS ever changes.
 """
 
 import html
+from collections.abc import Iterable
 
 ZUCHTRINDER_ORIGINAL = {
     "01022110": "Pure-bred breeding heifers",
@@ -175,6 +176,18 @@ CATEGORIES = {
 CODE_TO_CATEGORY = {
     code: category for category, info in CATEGORIES.items() for code in info["codes"]
 }
+
+
+def validate_product_codes(product_codes: Iterable[str]) -> None:
+    """Fail instead of silently dropping a newly added/unknown code.
+
+    Pandas groupby drops NaN category keys by default, so mapping an
+    uncategorized code and continuing would undercount dashboard totals.
+    """
+    unknown = {str(code) for code in product_codes if code not in CODE_TO_CATEGORY}
+    if unknown:
+        raise ValueError(f"Uncategorized product codes: {sorted(unknown)}")
+
 
 # The reader-facing filter is a single-select "pick one lens" control, not
 # a checkbox tree -- "Calves" and "For slaughter"/"For breeding"/"For

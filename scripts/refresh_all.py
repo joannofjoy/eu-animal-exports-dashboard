@@ -3,9 +3,9 @@ export and import data from the live Eurostat API, then rebuild every
 page from the refreshed data. This is the one command a scheduled task
 (or a person) needs to bring the whole site up to date -- before this
 script existed, refreshing meant remembering to run fetch_at_history.py
-and fetch_at_imports.py once per reporter (12 separate commands for the
-six reporters this project tracks) and then all six build_*.py scripts,
-in the right order, by hand.
+and fetch_at_imports.py once per reporter (54 separate commands for the
+27 EU member states this project tracks as reporters) and then all six
+build_*.py scripts, in the right order, by hand.
 
 Each step is a real subprocess call to the existing script, exactly as if
 typed by hand -- this file doesn't duplicate any fetching/building logic,

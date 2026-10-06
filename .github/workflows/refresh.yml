@@ -56,11 +56,15 @@ jobs:
         run: python scripts/refresh_all.py
         working-directory: .
 
+      - name: Stage reader-facing site files
+        run: python scripts/make_deploy_site.py
+        working-directory: .
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: public
+          path: site_dist
 
       - id: deployment
         uses: actions/deploy-pages@v4
