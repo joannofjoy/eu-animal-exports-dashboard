@@ -79,6 +79,27 @@ def test_validate_api_response_rejects_null_observation_values():
         raise AssertionError("missing observation values should be rejected")
 
 
+def test_validate_api_response_rejects_product_outside_custom_products_list():
+    # fetch_meat_imports.py passes its own MEAT_PRODUCTS list here instead
+    # of relying on the live-cattle PRODUCTS default -- confirms that
+    # override actually takes effect rather than always checking against
+    # the module-level default.
+    try:
+        validate_api_response(_valid_api_rows(), 2023, "AT", "2", products=["02013000"])
+    except ValueError as error:
+        assert "unrequested products" in str(error)
+    else:
+        raise AssertionError("a product outside the custom list should be rejected")
+
+
+def test_validate_api_response_accepts_product_within_custom_products_list():
+    clean = validate_api_response(
+        _valid_api_rows(), 2023, "AT", "2", products=["01022110", "02013000"]
+    )
+
+    assert clean["OBS_VALUE"].sum() == 15010
+
+
 def test_aggregate_sums_by_year_and_excludes_aggregate_partners():
     # A small, hand-built stand-in for what fetch() would normally
     # download: a few real rows, plus one "WORLD" row that must be
@@ -246,6 +267,40 @@ def test_aggregate_pivots_head_count_and_euro_value_onto_the_same_row():
     assert by_partner.iloc[0]["value_eur"] == 22000
     assert by_partner_product.iloc[0]["quantity"] == 15
     assert by_partner_product.iloc[0]["value_eur"] == 22000
+
+
+def test_aggregate_with_custom_indicator_columns_for_meat_quantity():
+    # fetch_meat_imports.py passes {"QUANTITY_IN_100KG": "quantity_100kg",
+    # "VALUE_IN_EUROS": "value_eur"} instead of the live-cattle default,
+    # since meat has no per-animal head count -- confirms the output
+    # column actually takes that custom name rather than always being
+    # "quantity".
+    raw = pd.DataFrame(
+        [
+            {
+                "partner": "DE",
+                "TIME_PERIOD": "2023-01",
+                "product": "02013000",
+                "indicators": "QUANTITY_IN_100KG",
+                "OBS_VALUE": 549.04,
+            },
+            {
+                "partner": "DE",
+                "TIME_PERIOD": "2023-01",
+                "product": "02013000",
+                "indicators": "VALUE_IN_EUROS",
+                "OBS_VALUE": 1254947,
+            },
+        ]
+    )
+
+    columns = {"QUANTITY_IN_100KG": "quantity_100kg", "VALUE_IN_EUROS": "value_eur"}
+    by_product, _, _ = aggregate(raw, indicator_columns=columns)
+
+    assert "quantity" not in by_product.columns
+    row = by_product.iloc[0]
+    assert row["quantity_100kg"] == 549.04
+    assert row["value_eur"] == 1254947
 
 
 def test_aggregate_monthly_keeps_month_granularity_and_excludes_aggregate_partners():

@@ -2,10 +2,11 @@
 export and import data from the live Eurostat API, then rebuild every
 page from the refreshed data. This is the one command a scheduled task
 (or a person) needs to bring the whole site up to date -- before this
-script existed, refreshing meant remembering to run fetch_at_history.py
-and fetch_at_imports.py once per reporter (54 separate commands for the
-27 EU member states this project tracks as reporters) and then all six
-build_*.py scripts, in the right order, by hand.
+script existed, refreshing meant remembering to run fetch_at_history.py,
+fetch_at_imports.py, and fetch_meat_imports.py once per reporter (81
+separate commands for the 27 EU member states this project tracks as
+reporters) and then all seven build_*.py scripts, in the right order, by
+hand.
 
 Each step is a real subprocess call to the existing script, exactly as if
 typed by hand -- this file doesn't duplicate any fetching/building logic,
@@ -54,7 +55,7 @@ END_YEAR = date.today().year
 # (script filename, extra CLI args) for the per-reporter fetch steps --
 # both need a reporter and the same year range, so they're driven by one
 # loop below rather than writing the same subprocess call out twice.
-PER_REPORTER_FETCH_SCRIPTS = ["fetch_at_history.py", "fetch_at_imports.py"]
+PER_REPORTER_FETCH_SCRIPTS = ["fetch_at_history.py", "fetch_at_imports.py", "fetch_meat_imports.py"]
 
 # Build scripts take no arguments and must run after every fetch step
 # above, in no particular order relative to each other (each reads its
@@ -66,6 +67,7 @@ BUILD_SCRIPTS = [
     "build_map.py",
     "build_monthly.py",
     "build_trade_pairs.py",
+    "build_beef_vs_cows.py",
     "build_site.py",
     "build_mirror.py",
 ]

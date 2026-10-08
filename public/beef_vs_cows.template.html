@@ -1,0 +1,398 @@
+<!--
+  This is a TEMPLATE, not the live page. It's never opened in a browser
+  directly -- scripts/build_beef_vs_cows.py reads this file, replaces the
+  __ALL_CAPS__ placeholder tokens below with real numbers (computed from
+  the CSVs in data/processed/), and writes the result out as
+  beef_vs_cows.html, which is the actual static page. Re-run that script
+  any time the underlying data changes; editing beef_vs_cows.html by hand
+  would just get overwritten next time it runs.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+   <meta charset="utf-8" />
+   <meta name="viewport" content="width=device-width,initial-scale=1" />
+   <title>The Marker – Live Exports vs. Meat Imports</title>
+   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+
+   <style>
+     :root{
+       color-scheme:dark;
+       --pink:#E64980;
+       --turq:#6FB2A5;
+       --blue:#31688F;
+       --black:#010200;
+       --offwhite:#F0EEEF;
+
+       --panel: rgba(255,255,255,.045);
+       --border: rgba(240,238,239,.14);
+       --text: rgba(240,238,239,.94);
+       --muted: rgba(240,238,239,.70);
+       --grid: rgba(240,238,239,.12);
+       --radius:14px;
+       --shadow:0 12px 32px rgba(0,0,0,.20);
+     }
+     *{ box-sizing:border-box; }
+     body{
+       margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+       background:radial-gradient(ellipse at 50% -18%,rgba(49,104,143,.17),transparent 42%),var(--black);
+       color:var(--text); line-height:1.55;
+     }
+     .wrap{ max-width:1320px; margin:0 auto; padding:24px clamp(16px,3vw,36px) 48px; }
+
+     .siteTabs{ display:flex; gap:6px; padding:0 2px; border-bottom:1px solid rgba(240,238,239,.12); flex-wrap:wrap; }
+     .siteTabBtn{
+       font: inherit; font-size:13px; font-weight:600; color:var(--muted);
+       text-decoration:none; display:inline-block;
+       background:transparent; border:none; border-bottom:2px solid transparent;
+       padding:11px 15px; cursor:pointer; margin-bottom:-1px; border-radius:9px 9px 0 0;
+       transition:color .16s ease,background .16s ease;
+     }
+     .siteTabBtn:hover{ color:var(--text); background:rgba(240,238,239,.055); }
+     .siteTabBtn.active{ color:var(--turq); border-bottom-color:var(--turq); background:rgba(111,178,165,.10); cursor:default; }
+
+     .header{ padding-top:24px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+     h1{ margin:0; font-size:clamp(27px,3vw,38px); line-height:1.15; letter-spacing:-.035em; }
+
+     .reporterPicker{ display:flex; flex-direction:column; gap:4px; padding:10px 12px; border:1px solid var(--border); border-radius:11px; background:rgba(255,255,255,.035); }
+     .reporterPicker label{ font-size:11px; font-weight:650; letter-spacing:.045em; text-transform:uppercase; color:var(--muted); }
+     .reporterPicker select{
+       font: inherit; font-size:14px; color:var(--text); min-height:40px;
+       background:#0b0c0f; border:1px solid rgba(240,238,239,.20); border-radius:7px; padding:8px 10px; min-width:190px;
+     }
+
+     .intro{ max-width:85ch; color:var(--muted); font-size:14px; line-height:1.6; margin-bottom:4px; }
+
+     .panels{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:16px; }
+     .panel{
+       border:1px solid var(--border); border-radius:var(--radius);
+       background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.025));
+       box-shadow:var(--shadow); padding:20px 20px 16px;
+     }
+     .panelTitle{ margin:0 0 4px; font-size:17px; line-height:1.35; font-weight:600; color:rgba(240,238,239,.94); }
+     .panelSubtitle{ margin:0 0 14px; font-size:13px; color:var(--muted); }
+     .noDataNote{ color:var(--muted); font-size:14px; padding:12px 0; }
+
+     canvas{ width:100% !important; display:block; }
+     #liveChart, #meatChart{ height:380px !important; }
+
+     .footer{ margin-top:22px; padding-top:14px; border-top:1px solid var(--border); color:var(--muted); max-width:95ch; font-size:13px; line-height:1.65; }
+     .footer p{ margin:0 0 6px; }
+     .footer p:last-child{ margin-bottom:0; }
+     .footer strong{ color:rgba(240,238,239,.85); font-weight:600; }
+     .footer a{ color:var(--turq); font-weight:600; text-underline-offset:3px; }
+
+     :where(a,button,select,summary):focus-visible{ outline:3px solid var(--pink); outline-offset:3px; }
+     select{ transition:background-color .16s ease,color .16s ease,border-color .16s ease; }
+
+     @media (max-width:900px){
+       .panels{ grid-template-columns:1fr; }
+     }
+     @media (max-width:640px){
+       .wrap{ padding:12px 12px 32px; }
+       .siteTabs{ gap:2px; overflow-x:auto; flex-wrap:nowrap; scrollbar-width:thin; }
+       .siteTabBtn{ white-space:nowrap; padding:10px 11px; font-size:12px; }
+       .header{ padding-top:20px; align-items:flex-start; }
+       .reporterPicker select{ width:100%; min-width:0; }
+       .panel{ padding:15px 13px 12px; border-radius:12px; }
+       #liveChart, #meatChart{ height:300px !important; }
+     }
+     @media (prefers-reduced-motion:reduce){ *,*::before,*::after{ scroll-behavior:auto!important; transition:none!important; } }
+   </style>
+</head>
+
+<body>
+<div class="wrap">
+   <div class="siteTabs">__SITE_TABS_HTML__</div>
+
+   <div class="header">
+     <div>
+       <h1>Live Exports vs. Meat Imports — <span id="reporterNameInTitle">Austria</span></h1>
+     </div>
+     <div class="reporterPicker">
+       <label for="reporterSelect">Reporting country</label>
+       <select id="reporterSelect"></select>
+     </div>
+   </div>
+
+   <p class="intro">
+     <span id="reporterNameInIntro">Austria</span>'s own live cattle exports next to its own beef &amp; veal
+     meat imports, __YEAR_RANGE__ — one side in animals, the other in tonnes, shown side by side rather
+     than converted into one number. See <a href="methodology.html">Methodology and data</a> for why these
+     two figures can't be combined into a single comparable total.
+   </p>
+
+   <div class="panels">
+     <div class="panel" id="livePanel">
+       <p class="panelTitle">Live cattle exported</p>
+       <p class="panelSubtitle">Heading 0102, every weight class and declared purpose</p>
+       <p class="noDataNote" id="liveNoData" style="display:none;"></p>
+       <canvas id="liveChart"></canvas>
+     </div>
+
+     <div class="panel" id="meatPanel">
+       <p class="panelTitle">Beef &amp; veal meat imported</p>
+       <p class="panelSubtitle">Headings 0201/0202, fresh/chilled and frozen, combined — no veal/beef split exists in trade data</p>
+       <p class="noDataNote" id="meatNoData" style="display:none;"></p>
+       <canvas id="meatChart"></canvas>
+     </div>
+   </div>
+
+   <div class="footer">
+     <p>
+       Source: Eurostat Comext, dataset DS-045409. Live exports and meat imports are both
+       <span id="reporterNameInFooter">Austria</span>'s own declarations, not independently verified against a partner country's records.
+     </p>
+     <p>
+       <strong>Why no combined total:</strong> converting live animals into an equivalent meat weight needs an
+       assumed dressing percentage (carcass weight as a share of live weight), which varies by animal type and
+       isn't one single verified figure — showing both numbers as reported avoids baking in that assumption.
+     </p>
+     <p><a href="methodology.html">Methodology and data</a></p>
+   </div>
+</div>
+
+<script>
+   // ====== Embedded data ======
+   // build_beef_vs_cows.py replaced these placeholders with real JSON --
+   // see its load_live_exports_by_year()/load_meat_imports_by_year() for
+   // where the numbers come from. Each is {year: {..., valueEur}}; the
+   // live side also has "quantity" (head count), the meat side has
+   // "quantityTonnes" -- different keys on purpose, so a bug that
+   // accidentally mixed the two up (plotting tonnes as animals, say)
+   // would throw instead of silently drawing a wrong chart.
+   let liveExportsByYear = __LIVE_EXPORTS_BY_YEAR_JSON__;
+   let meatImportsByYear = __MEAT_IMPORTS_BY_YEAR_JSON__;
+   const REPORTERS = __REPORTERS_JSON__;
+   const austriaData = { liveExportsByYear, meatImportsByYear };
+
+   const css = getComputedStyle(document.documentElement);
+   const TURQ = css.getPropertyValue('--turq').trim();
+   const BLUE = css.getPropertyValue('--blue').trim();
+   const GRID = css.getPropertyValue('--grid').trim();
+   const TEXT = css.getPropertyValue('--muted').trim();
+
+   const fmt = new Intl.NumberFormat('en-GB');
+   const fmtTonnes = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
+   const fmtEur = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+
+   function rgba(hex, a){
+     const h = hex.replace('#','');
+     const r = parseInt(h.slice(0,2),16);
+     const g = parseInt(h.slice(2,4),16);
+     const b = parseInt(h.slice(4,6),16);
+     return `rgba(${r},${g},${b},${a})`;
+   }
+
+   const liveNoData = document.getElementById('liveNoData');
+   const meatNoData = document.getElementById('meatNoData');
+   const liveCanvasWrap = document.getElementById('liveChart');
+   const meatCanvasWrap = document.getElementById('meatChart');
+   const reporterNameInTitle = document.getElementById('reporterNameInTitle');
+
+   // A reporter can genuinely have zero years of data on either side (e.g.
+   // Malta has zero live-cattle exports 2015-2026, confirmed via the live
+   // API -- see docs/llm_agent_handoff.md). Each panel checks its own data
+   // independently rather than hiding both together, since a reporter
+   // could plausibly have one side but not the other.
+   function updateNoDataState(){
+     const hasLive = Object.keys(liveExportsByYear).length > 0;
+     const hasMeat = Object.keys(meatImportsByYear).length > 0;
+     liveCanvasWrap.style.display = hasLive ? '' : 'none';
+     meatCanvasWrap.style.display = hasMeat ? '' : 'none';
+     liveNoData.style.display = hasLive ? 'none' : '';
+     meatNoData.style.display = hasMeat ? 'none' : '';
+     const name = reporterNameInTitle.textContent;
+     if (!hasLive) liveNoData.textContent = `No live cattle export data has been reported for ${name} in this period.`;
+     if (!hasMeat) meatNoData.textContent = `No beef/veal meat import data has been reported for ${name} in this period.`;
+   }
+
+   function sortedYears(byYear){
+     return Object.keys(byYear).sort();
+   }
+
+   const liveChart = new Chart(document.getElementById('liveChart'), {
+     type: 'bar',
+     data: {
+       labels: sortedYears(liveExportsByYear),
+       datasets: [{
+         label: 'Animals exported',
+         data: sortedYears(liveExportsByYear).map(y => liveExportsByYear[y].quantity),
+         backgroundColor: TURQ,
+         hoverBackgroundColor: rgba(TURQ, 0.95),
+         borderRadius: 0,
+         borderSkipped: false,
+         barPercentage: 0.85,
+         categoryPercentage: 0.72
+       }]
+     },
+     options: {
+       responsive: true,
+       maintainAspectRatio: false,
+       plugins: {
+         legend: { display: false },
+         tooltip: {
+           callbacks: {
+             label: (c) => `${fmt.format(c.raw)} animals`,
+             afterLabel: (c) => {
+               const year = sortedYears(liveExportsByYear)[c.dataIndex];
+               return fmtEur.format(liveExportsByYear[year].valueEur);
+             }
+           }
+         }
+       },
+       scales: {
+         x: { ticks: { color: TEXT }, grid: { color: GRID } },
+         y: {
+           beginAtZero: true,
+           ticks: { color: TEXT, callback: v => fmt.format(v) },
+           grid: { color: GRID },
+           title: { display: true, text: 'Number of animals', color: TEXT }
+         }
+       }
+     }
+   });
+
+   const meatChart = new Chart(document.getElementById('meatChart'), {
+     type: 'bar',
+     data: {
+       labels: sortedYears(meatImportsByYear),
+       datasets: [{
+         label: 'Meat imported',
+         data: sortedYears(meatImportsByYear).map(y => meatImportsByYear[y].quantityTonnes),
+         backgroundColor: BLUE,
+         hoverBackgroundColor: rgba(BLUE, 0.95),
+         borderRadius: 0,
+         borderSkipped: false,
+         barPercentage: 0.85,
+         categoryPercentage: 0.72
+       }]
+     },
+     options: {
+       responsive: true,
+       maintainAspectRatio: false,
+       plugins: {
+         legend: { display: false },
+         tooltip: {
+           callbacks: {
+             label: (c) => `${fmtTonnes.format(c.raw)} tonnes`,
+             afterLabel: (c) => {
+               const year = sortedYears(meatImportsByYear)[c.dataIndex];
+               return fmtEur.format(meatImportsByYear[year].valueEur);
+             }
+           }
+         }
+       },
+       scales: {
+         x: { ticks: { color: TEXT }, grid: { color: GRID } },
+         y: {
+           beginAtZero: true,
+           ticks: { color: TEXT, callback: v => fmtTonnes.format(v) },
+           grid: { color: GRID },
+           title: { display: true, text: 'Tonnes', color: TEXT }
+         }
+       }
+     }
+   });
+
+   function renderAll(){
+     updateNoDataState();
+     liveChart.data.labels = sortedYears(liveExportsByYear);
+     liveChart.data.datasets[0].data = sortedYears(liveExportsByYear).map(y => liveExportsByYear[y].quantity);
+     liveChart.update();
+
+     meatChart.data.labels = sortedYears(meatImportsByYear);
+     meatChart.data.datasets[0].data = sortedYears(meatImportsByYear).map(y => meatImportsByYear[y].quantityTonnes);
+     meatChart.update();
+   }
+   updateNoDataState();
+
+   // ========================================================================
+   // Reporter picker -- same pattern as index.template.html's (see that
+   // file's comments for why a <script src> tag is used instead of
+   // fetch(): these pages work opened directly as local files, and
+   // fetch() of a relative path is blocked under file://).
+   // ========================================================================
+
+   window.REPORTER_DATA = window.REPORTER_DATA || {};
+   const reporterSelect = document.getElementById('reporterSelect');
+   const reporterNameInIntro = document.getElementById('reporterNameInIntro');
+   const reporterNameInFooter = document.getElementById('reporterNameInFooter');
+   let currentReporter = 'AT';
+   let pendingReporter = 'AT';
+
+   REPORTERS.forEach(r => {
+     const opt = document.createElement('option');
+     opt.value = r.code;
+     opt.textContent = r.name;
+     reporterSelect.appendChild(opt);
+   });
+   reporterSelect.value = currentReporter;
+
+   function updateTabLinksForReporter(code = currentReporter){
+     document.querySelectorAll('a.siteTabBtn[href]').forEach(a => {
+       const base = a.getAttribute('href').split('?')[0];
+       a.setAttribute('href', `${base}?reporter=${code}`);
+     });
+   }
+   updateTabLinksForReporter();
+
+   try {
+     const fromUrl = new URLSearchParams(location.search).get('reporter');
+     const stored = fromUrl || localStorage.getItem('reporterCountry');
+     if (stored && stored !== currentReporter && REPORTERS.some(r => r.code === stored)){
+       reporterSelect.value = stored;
+       switchReporter(stored);
+     }
+   } catch (e) {
+     // localStorage unavailable (private browsing, etc.) -- the ?reporter=
+     // URL param above still works regardless.
+   }
+
+   reporterSelect.addEventListener('change', () => switchReporter(reporterSelect.value));
+
+   function switchReporter(code){
+     updateTabLinksForReporter(code);
+     pendingReporter = code;
+     if (code === 'AT'){
+       applyReporterData('AT', austriaData);
+       return;
+     }
+     if (window.REPORTER_DATA[code]){
+       applyReporterData(code, window.REPORTER_DATA[code]);
+       return;
+     }
+
+     const script = document.createElement('script');
+     script.src = `data/beef_vs_cows/${code.toLowerCase()}.js`;
+     script.onload = () => {
+       if (pendingReporter !== code) return;
+       applyReporterData(code, window.REPORTER_DATA[code]);
+     };
+     script.onerror = () => {
+       if (pendingReporter !== code) return;
+       alert(`No data available yet for that country -- showing Austria instead.`);
+       reporterSelect.value = 'AT';
+       switchReporter('AT');
+     };
+     document.head.appendChild(script);
+   }
+
+   function applyReporterData(code, data){
+     currentReporter = code;
+     liveExportsByYear = data.liveExportsByYear;
+     meatImportsByYear = data.meatImportsByYear;
+
+     const name = (REPORTERS.find(r => r.code === code) || {}).name || code;
+     reporterNameInTitle.textContent = name;
+     reporterNameInIntro.textContent = name;
+     reporterNameInFooter.textContent = name;
+
+     try { localStorage.setItem('reporterCountry', code); } catch (e) { /* see above */ }
+     updateTabLinksForReporter();
+
+     renderAll();
+   }
+</script>
+</body>
+</html>

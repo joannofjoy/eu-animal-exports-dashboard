@@ -133,6 +133,37 @@ COUNTRY_NAMES = {
     "PS": "Occupied Palestinian Territory",
     "UG": "Uganda",
     "VN": "Vietnam",
+    # Turned up once meat-trade data (fetch_meat_imports.py, headings
+    # 0201/0202) was fetched for all 27 reporters -- meat ships to a much
+    # wider set of destinations than live cattle does. Same verification
+    # as the blocks above: checked live against CXT_FREE_ISO, not guessed.
+    "AG": "Antigua and Barbuda",
+    "BM": "Bermuda",
+    "BO": "Bolivia",
+    "BT": "Bhutan",
+    "BW": "Botswana",
+    "CL": "Chile",
+    "DO": "Dominican Republic",
+    "FK": "Falkland Islands",
+    "GH": "Ghana",
+    "GL": "Greenland",
+    "GT": "Guatemala",
+    "HK": "Hong Kong",
+    "HN": "Honduras",
+    "LI": "Liechtenstein",
+    "NC": "New Caledonia",
+    "NZ": "New Zealand",
+    "PA": "Panama",
+    "PM": "St Pierre and Miquelon",
+    "PY": "Paraguay",
+    "SG": "Singapore",
+    "SZ": "Eswatini",
+    "TW": "Taiwan",
+    "TZ": "Tanzania",
+    "UY": "Uruguay",
+    "VG": "British Virgin Islands",
+    "ZA": "South Africa",
+    "ZM": "Zambia",
 }
 
 # The 27 current EU member states (ISO2), for splitting partner countries

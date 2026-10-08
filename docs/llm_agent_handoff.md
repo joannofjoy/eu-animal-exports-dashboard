@@ -214,6 +214,109 @@ the dashboards label everything by weight bracket and declared purpose,
 **never** as "veal" or "beef" outright, and the user explicitly agreed
 this was the right call after seeing the numbers.
 
+### 6.1 Extending the question to meat trade (not livestock) — 2026-10-06
+
+User follow-up, explicit correction after an initial misread: *"I mean
+meat trade, not livestock trade"* — i.e. not this project's own live
+cattle data, but processed beef/veal product imports/exports, and how
+animal-rights/welfare organizations track that side. Research done via
+live web search + direct primary-source verification, not assumption:
+
+**The same gap exists on the meat side, confirmed directly against
+Eurostat's live codelist.** DS-045409 (this project's own dataset — a
+general goods-trade dataset, not cattle-specific; the project just
+filters it to heading `0102`) also carries headings `0201` (fresh/chilled
+bovine meat) and `0202` (frozen bovine meat). Fetched `CXT_NC`
+(Eurostat's CN8 product codelist) live and checked every code under both
+headings (32 total): every single one splits by **cut type** (carcass,
+quarters, boneless) and **weight band**, exactly like the live-animal
+side — not one mentions veal, age, or a Class V/Z label. A web search
+summary claimed specific "veal CN codes" (e.g. `0201.10.10.10`) exist,
+but that 10-digit format and the "190kg carcass" threshold it cited don't
+match the EU's actual 8-digit CN system or any code in the real codelist
+response — almost certainly a different country's tariff schedule
+(e.g. US HTS) surfaced by the search, not an EU one. Flagging this
+explicitly since it's a case of a plausible-sounding but unverified claim
+that a live primary-source check actually contradicted.
+
+**So: meat *trade* statistics (Comext/CN, which is what customs
+authorities and Eurostat's trade dashboards report) cannot distinguish
+veal from beef at all, in or out of the EU.** The real EU legal
+veal/beef line (Class V/Z = veal vs. 12mo+ = beef, per Reg 1308/2013 —
+see above) is a **carcass grading classification applied at the
+slaughterhouse**, not a customs classification. It only exists in
+production statistics, not trade statistics — the distinction is lost
+the moment meat crosses a border and gets classified under CN/HS codes
+for customs purposes.
+
+**What orgs/the EU itself actually use instead:**
+- **Production, not trade**: the EU's own Meat Market Observatory
+  (`agriculture.ec.europa.eu/.../market-observatories/meat`) sources its
+  veal-specific numbers from `apro_mt_pwgtm` — the same Eurostat
+  slaughterhouse dataset already used and verified earlier in this
+  section (section 6, "Attempted to bridge weight → age...") — which
+  reports animals *slaughtered*, split into the real Calf/Young
+  cattle/Bull/Cow/Heifer categories. This is domestic production data
+  (how many calves a country slaughtered for veal), not an import/export
+  figure.
+- **Live animal movements, not meat**: Eurogroup for Animals' 2019 report
+  *"Towards a meat and carcasses only trade"* (the report advocating for
+  a *shift* from live to meat trade — directly relevant context, not just
+  a tangent) explicitly lists its data sources (Annex I): **Comext** (the
+  same dataset/API this project uses) for recent trends, plus **TRACES**
+  (the EU's animal-movement control system) for longer time series and
+  journey-duration detail Comext doesn't carry. Notably, the report
+  itself flags that even TRACES — the system specifically built to track
+  live consignments — has known data-quality problems (citing CIWF 2018:
+  "logs are often incomplete/unrealistic on times, and lack follow-up
+  actions"). The report's own "beef and veal" trade references are
+  high-level advocacy framing, not a worked veal-specific trade dataset.
+- **The EU Commission's own "beef and veal" trade dashboard**
+  (same market-observatory page) appears to report beef and veal
+  *together* as one commodity group rather than as a split line — its
+  methodology page doesn't claim a veal/beef breakdown, consistent with
+  the CN-code finding above (there's no code to split on).
+- **User pushback ("aren't NGOs and journalists using *some* data for
+  this?") led to a stronger, more specific finding.** Read EuroVeal/
+  FEFAC's "Vision of the European Veal Sector" (2021) directly — the
+  actual EU veal-sector industry federation's own paper, the body with
+  the strongest incentive to have good trade figures if they existed.
+  It states outright: **"Veal trade with Third Countries is very
+  limited, hence consumption is almost equivalent to production"** —
+  i.e. even the industry itself doesn't track cross-border veal trade;
+  it substitutes national *production* totals as a proxy for national
+  *consumption* instead. Its own per-capita consumption figure is
+  footnoted **"Source: Eurostat, Agreste, PVE — 2014 (Data are lacking
+  since 2014)."** PVE (Productschap Vee en Vlees) was a Dutch public
+  sectoral board that used to collect detailed EU livestock/meat
+  sector statistics; it was dissolved around 2014, and per this
+  industry paper written in 2021, nothing has fully replaced it since
+  for veal specifically. Also confirmed directly in a French national
+  agricultural-statistics sheet (FranceAgriMer, sourced from French
+  customs): beef import/export figures carry an explicit **"*Including
+  veal"** footnote — veal is folded into "beef" even at national
+  customs-statistics level, not just at the EU/Comext level.
+  Company-level veal export figures that *do* circulate in trade press
+  (e.g. VanDrie Group, the dominant Dutch veal producer, self-reporting
+  "exports to 60+ countries") are self-disclosed corporate figures, not
+  government statistics; genuine cross-border veal-specific volumes
+  otherwise live behind paid industry market-intelligence subscriptions
+  (e.g. GIRA Meat Club), not in any public dataset found so far.
+
+**Bottom line for a future "meat trade" feature**: a live-export-vs-
+meat-import comparison *by volume* (total heading-0102 live exports vs.
+total 0201/0202 meat imports) is buildable with the existing
+fetch_at_history.py-style pipeline pointed at different CN8 codes — same
+dataset, same API, same reporter/partner/flow dimensions, genuinely
+little new infrastructure needed. But a *veal-specific* version of that
+comparison — "how much of what's imported as meat could be traced back
+to the calves that left live" — is not something published trade
+statistics can answer at all, from any source found so far. That would
+need either a sourcing assumption (e.g. applying a country's known
+veal-share-of-production ratio to its meat exports) or a different kind
+of evidence entirely (certification/traceability records, not trade
+statistics). Not started — this was scoping research only, nothing built.
+
 ## 7. Product category system — three generations, current state
 
 `scripts/product_categories.py` groups the 35 CN8 codes
@@ -546,6 +649,136 @@ understanding, not just re-running blindly.
 - Not yet done: none of this session's changes (the 27-reporter data, the
   `validate_api_response()`/`AGGREGATE_PARTNERS`/`COUNTRY_NAMES` fixes, or
   the three front-end empty-data fixes) have been committed to git yet.
-  The two "for later" items from section 12 (map.html pink fill to match
-  monthly.html; meat-trade research) are still untouched, as the user
-  asked.
+
+**Update, same day**: both "for later" items above were picked back up
+and finished. The section-13 commit covers everything through the
+27-reporter expansion; the map.html pink fill and the meat-trade
+research (and the new page it led to) are documented below in sections
+14 and 6.1 respectively.
+
+## 14. New page: public/beef_vs_cows.html ("Live vs. Meat") — 2026-10-06
+
+User's own framing, verbatim: *"i think lets build an additional view
+that will be beef vs cows comparison"* -- clarified via two quick
+questions before building anything (given the real scope: a whole new
+fetch pipeline, not a UI tweak) into: a reporter's own live cattle
+**exports** next to that same reporter's beef/veal meat **imports**,
+shown side by side in each side's native unit (animals vs. tonnes) with
+no shared-unit conversion -- both the user's explicit, "(Recommended)"
+picks.
+
+**Why import-only/export-only, and why no conversion**: directly follows
+section 6.1's research -- "live calves leave, meat comes back" is the
+actual investigative question, and there's no single verified live-
+weight-to-meat-weight conversion factor (dressing percentage varies by
+animal type; section 6 already found this out the hard way for the
+veal/beef weight-bracket question). Showing both numbers as Eurostat
+actually reported them, rather than inventing a blended figure, was the
+deliberate choice.
+
+**New fetch pipeline (`scripts/fetch_meat_imports.py`,
+`scripts/meat_products.py`)**: meat (CN headings 0201/0202, 24 CN8 codes,
+the same set already verified live in section 6.1) needed its own fetch
+script, not just a new category on the existing one, because its
+quantity indicator is different -- **confirmed live that meat CN8 codes
+return no `SUPPLEMENTARY_QUANTITY` rows at all** (only `VALUE_IN_EUROS`);
+the real quantity indicator is `QUANTITY_IN_100KG` (found by testing
+every plausible-sounding candidate from the generic `CXT_INDICATORS`
+codelist against the live API one at a time -- most returned HTTP 400,
+only `QUANTITY_IN_100KG` actually worked for this dataset). This is a
+real, structural difference from every other fetch in this project
+(live cattle, always head counts), not a naming inconsistency to paper
+over.
+
+Rather than duplicate `fetch_at_history.py`'s `validate_api_response()`/
+`aggregate()`/`_pivot_indicators()`, generalized them (this is the
+genuine "second concrete case" the project's own stated convention asks
+for before adding an abstraction):
+- `validate_api_response()` gained a `products` parameter (was hardcoded
+  to the module-level live-cattle `PRODUCTS`), defaulting to `PRODUCTS`
+  so every existing call site is unaffected.
+- `_pivot_indicators()`/`aggregate()`/`aggregate_monthly()` gained an
+  `indicator_columns` parameter (was hardcoded to
+  `{"SUPPLEMENTARY_QUANTITY": "quantity", "VALUE_IN_EUROS": "value_eur"}`),
+  same defaulting approach. `fetch_meat_imports.py` passes
+  `{"QUANTITY_IN_100KG": "quantity_100kg", "VALUE_IN_EUROS": "value_eur"}`
+  -- the deliberately different column name (`quantity_100kg`, not
+  `quantity`) is intentional, so a future bug that accidentally mixed up
+  which side's data went where would throw a KeyError instead of
+  silently plotting tonnes as animals.
+- `fetch_year()`/`fetch()` were **not** shared (duplicated in
+  `fetch_meat_imports.py` instead) -- this matches the *already-existing*
+  pattern (`fetch_at_imports.py` already duplicates these two rather than
+  importing them, since the SDMX key needs different PRODUCTS/FLOW baked
+  in each time), not a new inconsistency introduced here.
+
+**Two real data-quality findings from the live 27-reporter meat fetch**,
+both confirmed against the live API before fixing, not guessed:
+1. **A blank/NaN `partner` field** on a handful of rows (confirmed live
+   for Germany 2023: 10 rows, one product/month combination, every other
+   column present and valid) -- crashed `validate_api_response()`'s
+   "missing observation dimension" check, which aborted the *entire*
+   multi-year fetch for that reporter (same failure shape as the
+   empty-year bug from section 13). Affected 8 of 27 reporters (CY, DK,
+   FR, DE, GR, IT, MT, NL). Fixed by filling blank `partner` with `QX`
+   (Eurostat's own "not specified for commercial or military reasons"
+   code, confirmed to exist in `CXT_FREE_ISO`) before that check runs --
+   the specific choice of QX over its intra-/extra-EU-specific siblings
+   (QY/QZ) is an inference (blank rows don't say which), but doesn't
+   matter here since `AGGREGATE_PARTNERS` excludes all of them the same
+   way.
+2. **`QY` itself showing up as a literal (non-blank) partner value**,
+   confirmed in Estonia's 2018 meat-import data -- it's a real Eurostat
+   confidentiality code (`CXT_FREE_ISO`: "...not specified for commercial
+   or military reasons..."), the same family as `QV`/`QW` already in
+   `AGGREGATE_PARTNERS` but not previously seen, since those only cover
+   "destination genuinely unknown," a different concept. Added `QU`,
+   `QX`, `QY`, `QZ` to `AGGREGATE_PARTNERS` together, pre-emptively
+   covering the rest of the family rather than waiting to hit each one by
+   accident across future refreshes.
+- Re-ran just the 8 affected reporters after the fix -- all succeeded.
+  All 27 reporters confirmed present (`data/processed/<code>_beef_
+  imports_yearly_by_product.csv`) before building.
+- **27 more partner-country codes** turned up once meat data existed for
+  all 27 reporters (meat ships much further than live cattle does) --
+  checked live against `CXT_FREE_ISO` the same way as every other
+  `COUNTRY_NAMES` addition in this project, all real countries (Chile,
+  Hong Kong, New Zealand, Taiwan, Uruguay, etc. -- see `countries.py` for
+  the full list), none needed exclusion.
+
+**The page itself** (`public/beef_vs_cows.template.html` ->
+`scripts/build_beef_vs_cows.py`): deliberately simpler than
+`index.template.html` -- no category or geography filter sidebar (there's
+no sub-category to filter by on the meat side, see `meat_products.py`'s
+docstring for why; keeping the live-cattle side a plain total too keeps
+both panels directly comparable in scope), no unit toggle (units are
+fixed per panel, €/animals-style toggling doesn't apply the same way
+when the two panels are already in different units). Two independent
+Chart.js bar charts, each with its own independent "no data" state --
+**tested live with Malta, which turns out to be a genuinely interesting
+real finding, not just an edge case**: Malta has zero live-cattle exports
+(already known, section 13) but real, substantial beef/veal meat imports
+(3,000-7,000+ tonnes/year) -- i.e. Malta imports meat but has no live
+cattle export industry at all. The page shows this correctly: "No live
+cattle export data has been reported for Malta in this period" on the
+left, a real populated chart on the right, independently. Verified live
+via CDP on Austria (default), Poland (normal reporter, confirmed only
+failed once before the full 27-reporter build finished -- expected
+fallback-to-Austria behavior, not a bug, re-verified clean after
+rebuilding), Malta (the edge case), and at a 390px mobile viewport --
+zero console errors throughout, panels stack correctly on mobile.
+Added to `scripts/site_nav.py`'s `PAGES` ("Live vs. Meat", between
+"Export vs. Import" and "Methodology"), `scripts/refresh_all.py` (fetch +
+build steps), and `README.md`'s page table.
+New tests: `tests/test_build_beef_vs_cows.py` (load/render functions,
+same tmp_path-CSV approach as every other `test_build_*.py`), plus two
+new tests in `tests/test_fetch_at_history.py` for the `products`/
+`indicator_columns` generalization specifically. 51 tests passing, ruff
+clean.
+
+Not yet done: none of this is committed to git yet (same as section 13's
+work -- nothing in this session has been committed/pushed).
+Not scoped/not asked for: a fresh/chilled (0201) vs. frozen (0202) split
+on the meat side would be real and verifiable (unlike a veal split,
+there's a genuine CN-code line to split on) but wasn't requested -- the
+page currently shows combined meat.

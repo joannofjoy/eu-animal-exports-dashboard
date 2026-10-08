@@ -21,6 +21,7 @@ PAGES = [
     ("map.html", "Map"),
     ("monthly.html", "Monthly"),
     ("trade_pairs.html", "Export vs. Import"),
+    ("beef_vs_cows.html", "Live vs. Meat"),
     ("methodology.html", "Methodology"),
 ]
 

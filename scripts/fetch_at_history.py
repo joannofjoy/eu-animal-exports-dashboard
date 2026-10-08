@@ -166,6 +166,20 @@ AGGREGATE_PARTNERS = {
     # CXT_FREE_ISO codelist) -- found once the 27-reporter rollout turned
     # up a reporter with trade recorded under it.
     "QS",
+    # QU/QX/QY/QZ are confidentiality-suppression placeholders -- "...not
+    # specified [for commercial or military reasons]" per CXT_FREE_ISO --
+    # distinct from QV/QW above (which mean "destination genuinely
+    # unknown"), these mean Eurostat deliberately withheld the real
+    # partner to avoid identifying individual traders. Found "QY" showing
+    # up as a literal partner value once meat-trade fetching started
+    # (fetch_meat_imports.py); the other three are the same family and
+    # excluded pre-emptively rather than waiting to find each one by
+    # accident. See validate_api_response() below for the related case of
+    # this showing up as a *blank* partner instead of one of these codes.
+    "QU",
+    "QX",
+    "QY",
+    "QZ",
 }
 
 # __file__ is this script's own path. .resolve() turns it into a full,
@@ -209,6 +223,7 @@ def validate_api_response(
     reporter: str,
     flow: str,
     indicators: list[str] = INDICATORS,
+    products: list[str] = PRODUCTS,
 ) -> pd.DataFrame:
     """Reject a successful HTTP response if its observations don't match
     the requested slice or if values/indicator pairs are incomplete.
@@ -244,6 +259,25 @@ def validate_api_response(
         print(f"  Note: Eurostat returned no observations for {reporter}, flow {flow}, {year}")
         return df
 
+    # A blank partner field (not one of the explicit QU/QX/QY/QZ
+    # confidentiality codes in AGGREGATE_PARTNERS, an actually-empty
+    # value) is a real, if infrequent, Eurostat quirk -- confirmed live
+    # for several reporters' meat-import data (e.g. Germany 2023: a
+    # handful of rows for one product/month with freq/product/flow/
+    # indicators/value all present and correct, but partner blank).
+    # These are a handful of low-value rows, consistent with the same
+    # confidentiality suppression QY etc. represent explicitly elsewhere
+    # -- filled in with QX (Eurostat's generic "not specified for
+    # commercial or military reasons" code) rather than raising, since
+    # the alternative is discarding an entire year's real data (same
+    # fetch()-wide-concatenation reasoning as the empty-year case above).
+    # The specific choice of QX over its intra-/extra-EU-specific
+    # siblings (QY/QZ) is an inference, not something Eurostat's response
+    # states outright -- it doesn't matter for this project's purposes,
+    # since AGGREGATE_PARTNERS excludes all four the same way.
+    df = df.copy()
+    df["partner"] = df["partner"].fillna("QX")
+
     key_columns = ["freq", "reporter", "partner", "product", "flow", "indicators", "TIME_PERIOD"]
     if df[key_columns].isna().any().any():
         raise ValueError("Eurostat response contains a missing observation dimension")
@@ -256,7 +290,7 @@ def validate_api_response(
         raise ValueError(f"Eurostat response contains a flow other than {flow}")
     if not df["TIME_PERIOD"].astype(str).str.startswith(f"{year}-").all():
         raise ValueError(f"Eurostat response contains observations outside {year}")
-    unexpected_products = set(df["product"].dropna().astype(str)) - set(PRODUCTS)
+    unexpected_products = set(df["product"].dropna().astype(str)) - set(products)
     if unexpected_products:
         raise ValueError(
             f"Eurostat response contains unrequested products: {sorted(unexpected_products)}"
@@ -333,7 +367,14 @@ def fetch(start_year: int, end_year: int, reporter: str = REPORTER) -> pd.DataFr
     return pd.concat(years_data, ignore_index=True)
 
 
-def _pivot_indicators(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
+INDICATOR_COLUMNS = {"SUPPLEMENTARY_QUANTITY": "quantity", "VALUE_IN_EUROS": "value_eur"}
+
+
+def _pivot_indicators(
+    df: pd.DataFrame,
+    group_cols: list[str],
+    indicator_columns: dict[str, str] = INDICATOR_COLUMNS,
+) -> pd.DataFrame:
     """Shared helper for aggregate()'s three tables: group by group_cols
     (e.g. ["year", "product"]) AND the "indicators" column together, sum
     OBS_VALUE within each group, then pivot "indicators" from being extra
@@ -346,6 +387,13 @@ def _pivot_indicators(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
     together into one meaningless number -- grouping by "indicators" too
     keeps them apart until the very end, when pivot() lays them out side
     by side instead of stacked as separate rows.
+
+    indicator_columns maps each raw Eurostat indicator code to the output
+    column name it should become -- defaults to this project's original
+    live-cattle shape (head count + euro value), but fetch_meat_imports.py
+    passes a different mapping, since meat's quantity indicator is
+    QUANTITY_IN_100KG (there's no per-animal head count for meat), not
+    SUPPLEMENTARY_QUANTITY.
     """
     grouped = (
         df.groupby([*group_cols, "indicators"])["OBS_VALUE"]
@@ -358,12 +406,7 @@ def _pivot_indicators(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
         # original group instead of per (group, indicator) pair.
         .pivot(index=group_cols, columns="indicators", values="OBS_VALUE")
         .reset_index()
-        .rename(
-            columns={
-                "SUPPLEMENTARY_QUANTITY": "quantity",
-                "VALUE_IN_EUROS": "value_eur",
-            }
-        )
+        .rename(columns=indicator_columns)
     )
     # pivot() leaves a leftover label ("indicators") on the column index
     # itself (not a real column, just metadata) that would otherwise show
@@ -378,7 +421,7 @@ def _pivot_indicators(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
     # value reported" as zero matches how every other missing-data case in
     # this codebase is handled, and avoids NaN leaking into the CSV as the
     # literal text "nan".
-    for col in ("quantity", "value_eur"):
+    for col in indicator_columns.values():
         if col not in grouped.columns:
             grouped[col] = 0
         grouped[col] = grouped[col].fillna(0)
@@ -386,7 +429,9 @@ def _pivot_indicators(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
     return grouped
 
 
-def aggregate(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def aggregate(
+    df: pd.DataFrame, indicator_columns: dict[str, str] = INDICATOR_COLUMNS
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Take the raw monthly rows and produce three yearly summaries: one
     totalled by product code, one totalled by partner country, and one
     keeping both breakdowns at once (partner AND product, not collapsing
@@ -397,9 +442,9 @@ def aggregate(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFram
     together in one line: `by_product, by_partner, by_partner_product =
     aggregate(df)`.
 
-    Each table has both a "quantity" column (head count) and a
-    "value_eur" column (trade value) -- see _pivot_indicators() above for
-    how the raw rows (one per indicator) turn into that shape.
+    Each table has both a quantity column and a "value_eur" column (trade
+    value) -- see _pivot_indicators() above for how the raw rows (one per
+    indicator) turn into that shape, and for what indicator_columns is.
     """
     # df["partner"].isin(AGGREGATE_PARTNERS) gives True/False for every
     # row depending on whether its partner code is one of the aggregate
@@ -414,32 +459,38 @@ def aggregate(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFram
     # 0 to 4 keeps just the year part, "2023".
     df["year"] = df["TIME_PERIOD"].str.slice(0, 4)
 
-    by_product = _pivot_indicators(df, ["year", "product"]).sort_values(["year", "product"])
+    quantity_col = next(iter(indicator_columns.values()))
+
+    by_product = _pivot_indicators(df, ["year", "product"], indicator_columns).sort_values(
+        ["year", "product"]
+    )
 
     # Same idea, but grouped by (year, partner) instead of (year, product),
     # and sorted so the biggest exporters come first within each year.
-    by_partner = _pivot_indicators(df, ["year", "partner"]).sort_values(
-        ["year", "quantity"], ascending=[True, False]
+    by_partner = _pivot_indicators(df, ["year", "partner"], indicator_columns).sort_values(
+        ["year", quantity_col], ascending=[True, False]
     )
 
     # Same idea again, but grouped by (year, partner, product) -- neither
     # dimension summed away, so this is the one build_dashboard.py needs
     # to answer "how much did partner X send in category Y in year Z".
-    by_partner_product = _pivot_indicators(df, ["year", "partner", "product"]).sort_values(
-        ["year", "partner", "product"]
-    )
+    by_partner_product = _pivot_indicators(
+        df, ["year", "partner", "product"], indicator_columns
+    ).sort_values(["year", "partner", "product"])
 
     return by_product, by_partner, by_partner_product
 
 
-def aggregate_monthly(df: pd.DataFrame) -> pd.DataFrame:
+def aggregate_monthly(
+    df: pd.DataFrame, indicator_columns: dict[str, str] = INDICATOR_COLUMNS
+) -> pd.DataFrame:
     """Like aggregate()'s by_partner_product table, but keeping the full
     "YYYY-MM" month instead of collapsing to just the year -- this is what
     public/monthly.html needs for its month-by-month chart, which none of
     the yearly-granularity tables can answer since the month information
     is thrown away as soon as aggregate() groups by year. Also has both a
-    "quantity" and a "value_eur" column, same as aggregate()'s tables --
-    see _pivot_indicators().
+    quantity column and a "value_eur" column, same as aggregate()'s
+    tables -- see _pivot_indicators().
 
     Kept as a separate function (rather than adding a fourth return value
     to aggregate()) so the three existing, already-yearly tables and their
@@ -448,7 +499,7 @@ def aggregate_monthly(df: pd.DataFrame) -> pd.DataFrame:
     df = df[~df["partner"].isin(AGGREGATE_PARTNERS)].copy()
 
     return (
-        _pivot_indicators(df, ["TIME_PERIOD", "partner", "product"])
+        _pivot_indicators(df, ["TIME_PERIOD", "partner", "product"], indicator_columns)
         .rename(columns={"TIME_PERIOD": "month"})
         .sort_values(["month", "partner", "product"])
     )

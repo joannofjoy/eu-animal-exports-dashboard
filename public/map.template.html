@@ -511,15 +511,17 @@
      };
 
      // The current reporter itself: highlighted with a thicker pink
-     // border so it reads as "this is where the exports come from,"
-     // separate from the value-based fill scale used for destination
-     // countries. Compared against currentReporter rather than a baked
-     // "isExporter" property, since which country this is changes
-     // whenever a different reporter is picked.
+     // border and a translucent pink fill (matching monthly.html's map)
+     // so it reads as "this is where the exports come from," separate
+     // from the value-based fill scale used for destination countries.
+     // Compared against currentReporter rather than a baked "isExporter"
+     // property, since which country this is changes whenever a
+     // different reporter is picked.
      if (props.code === currentReporter){
        base.color = PINK;
        base.weight = 3;
-       base.fillColor = NO_DATA_COLOR;
+       base.fillColor = PINK;
+       base.fillOpacity = 0.55;
      }
 
      return base;

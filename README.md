@@ -39,6 +39,7 @@ live site stays current without anyone needing to run anything by hand.
 ```
 python scripts/fetch_at_history.py --reporter AT --start-year 2015 --end-year 2025
 python scripts/fetch_at_imports.py --reporter AT --start-year 2015 --end-year 2025
+python scripts/fetch_meat_imports.py --reporter AT --start-year 2015 --end-year 2025
 python scripts/fetch_world_boundaries.py   # one-time; boundaries don't change
 python scripts/fetch_mirror_data.py        # Austria only, feeds mirror.html
 ```
@@ -71,6 +72,7 @@ blocked under `file://`; `<script src>` isn't).
 | `map.html` | `map.template.html` → `build_map.py` | Leaflet choropleth by destination, quantile-colored per year, year slider |
 | `monthly.html` | `monthly.template.html` → `build_monthly.py` | Within-year month-by-month breakdown, alongside the same partner list and map |
 | `trade_pairs.html` | `trade_pairs.template.html` → `build_trade_pairs.py` | One reporter's own exports vs. imports with a single chosen partner country |
+| `beef_vs_cows.html` | `beef_vs_cows.template.html` → `build_beef_vs_cows.py` | One reporter's own live cattle exports (heading 0102) next to its beef & veal meat imports (headings 0201/0202) — shown side by side in native units (animals vs. tonnes), not converted into one number |
 | `dashboard.html` | `dashboard.template.html` → `build_site.py` | Both `index` and `map` combined on one page, tab-switchable — built but not linked in the site nav |
 | `mirror.html` | `mirror.template.html` → `build_mirror.py` | Internal QA tool: Austria's own declarations vs. partner countries' mirrored declarations (see `docs/mirror_tool_explained.md`) — Austria only, not part of the multi-reporter rollout |
 | `methodology.html` | Maintained directly | Reader-facing source, definitions and limitations; linked from the dashboards |
